@@ -44,38 +44,91 @@ Then copy `main.js` and `manifest.json` into your vault's plugin folder.
 
 ## Usage
 
-### Inside Obsidian
+### In Obsidian (local hotkey)
 
 **Settings → Hotkeys** → search `Toggle floating notes` → bind a key. No default hotkey is set.
 
-### Global hotkey (macOS) — Raycast (recommended)
+This hotkey only fires when Obsidian is the active app. For a truly global hotkey, see below.
 
-Floating Notes exposes a local HTTP endpoint that toggles the popout **without activating the main Obsidian window**. The repo ships a ready-made Raycast Script Command:
+### Global hotkey (system-wide)
 
-1. In Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing `floating-notes.sh` (e.g. where you cloned this repo)
+Obsidian plugins can't register OS-level hotkeys directly (the only API that allows it, `electron.remote.globalShortcut`, is deprecated and forbidden by the community plugin guidelines). The standard workaround — used by [QuickAdd](https://github.com/chhoumann/quickadd) and others — is to delegate to a system-wide launcher that triggers the plugin externally.
+
+Floating Notes exposes two external triggers:
+
+| Trigger | Effect |
+|---|---|
+| `curl -s http://127.0.0.1:51234/toggle > /dev/null` | **Recommended.** Toggles the popout without activating the Obsidian app or raising the main window. |
+| `open "obsidian://floating-notes"` | Also toggles the popout, but opening an `obsidian://` URI activates the Obsidian app on macOS, which briefly raises the main window. |
+
+Pair one of those triggers with the system-wide launcher of your choice.
+
+#### Prerequisites
+
+1. Floating Notes is installed and enabled in Obsidian
+2. A system-wide launcher installed (Raycast, macOS Shortcuts, Alfred, Hammerspoon, Karabiner-Elements — pick one)
+
+#### Recipes
+
+**Raycast (macOS — recommended)**
+
+A ready-made Script Command is included in the repo.
+
+1. Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing `floating-notes.sh` (e.g. the cloned repo)
 2. Open Raycast → search `Toggle Floating Notes` → click the gear (`⌘ ⇧ ,`) → **Record Hotkey** → press your combo
-3. Done. The hotkey now toggles the popout from anywhere.
 
-### Global hotkey — other tools
+**macOS Shortcuts** (built-in, no extras)
 
-All three use the same one-liner:
+1. Shortcuts app → `+` new shortcut, name it `Floating Notes`
+2. Add action **Run Shell Script** → paste:
+   ```bash
+   curl -s http://127.0.0.1:51234/toggle > /dev/null
+   ```
+3. Shortcut Details (sidebar) → **Add Keyboard Shortcut** → press key combo
 
-```bash
-curl -s http://127.0.0.1:51234/toggle > /dev/null
+**Alfred** (Powerpack required)
+
+1. Workflows → `+` → Blank Workflow
+2. Right-click canvas → Triggers → **Hotkey** → set key
+3. Connect to Actions → **Run Script** (`/bin/bash`) → paste:
+   ```bash
+   curl -s http://127.0.0.1:51234/toggle > /dev/null
+   ```
+
+**Hammerspoon** (free, scriptable)
+
+Add to `~/.hammerspoon/init.lua`:
+```lua
+hs.hotkey.bind({"alt"}, "N", function()
+  hs.execute("/usr/bin/curl -s http://127.0.0.1:51234/toggle")
+end)
+```
+Reload config from the Hammerspoon menu bar icon.
+
+**Karabiner-Elements** (free, low-level)
+
+Complex modification JSON — import into your config:
+```json
+{
+  "from": { "key_code": "n", "modifiers": { "mandatory": ["right_option"] } },
+  "to": [{ "shell_command": "/usr/bin/curl -s http://127.0.0.1:51234/toggle" }],
+  "type": "basic"
+}
 ```
 
-- **macOS Shortcuts** — New Shortcut → action **Run Shell Script** → paste the curl → Shortcut Details → **Add Keyboard Shortcut**
-- **Alfred** — Workflow → **Hotkey** trigger → **Run Script** (`/bin/bash`) → paste the curl
-- **Hammerspoon** — in `~/.hammerspoon/init.lua`:
-  ```lua
-  hs.hotkey.bind({"alt"}, "N", function()
-    hs.execute("/usr/bin/curl -s http://127.0.0.1:51234/toggle")
-  end)
-  ```
+**Windows** (AutoHotkey v2)
 
-### Why not the URI handler?
+```ahk
+!n::RunWait("curl.exe -s http://127.0.0.1:51234/toggle", , "Hide")
+```
 
-`obsidian://floating-notes` also works, but opening a URL activates the Obsidian app — which briefly raises the main window on macOS. The HTTP endpoint bypasses app activation entirely and feels instant.
+**Linux** (e.g. `sxhkd`)
+
+Add to `~/.config/sxhkd/sxhkdrc`:
+```
+alt + n
+    curl -s http://127.0.0.1:51234/toggle > /dev/null
+```
 
 ## Settings
 
