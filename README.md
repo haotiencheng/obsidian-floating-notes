@@ -46,17 +46,36 @@ Then copy `main.js` and `manifest.json` into your vault's plugin folder.
 
 ### Inside Obsidian
 
-Open **Settings → Hotkeys**, search for **Toggle floating notes**, and bind a key (no default is set).
+**Settings → Hotkeys** → search `Toggle floating notes` → bind a key. No default hotkey is set.
 
-### Global hotkey (macOS)
+### Global hotkey (macOS) — Raycast (recommended)
 
-Pair the URI handler with a system-wide tool:
+Floating Notes exposes a local HTTP endpoint that toggles the popout **without activating the main Obsidian window**. The repo ships a ready-made Raycast Script Command:
 
-- **Raycast** — Quicklink → URL `obsidian://floating-notes` → assign hotkey
-- **macOS Shortcuts** — New Shortcut → "Open URLs" → `obsidian://floating-notes` → assign keyboard shortcut
-- **Alfred** — Workflow → Hotkey trigger → Run Script: `open "obsidian://floating-notes"`
+1. In Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing `floating-notes.sh` (e.g. where you cloned this repo)
+2. Open Raycast → search `Toggle Floating Notes` → click the gear (`⌘ ⇧ ,`) → **Record Hotkey** → press your combo
+3. Done. The hotkey now toggles the popout from anywhere.
 
-A helper script `floating-notes.sh` is included that opens the URI and raises the popout window above the main Obsidian window.
+### Global hotkey — other tools
+
+All three use the same one-liner:
+
+```bash
+curl -s http://127.0.0.1:51234/toggle > /dev/null
+```
+
+- **macOS Shortcuts** — New Shortcut → action **Run Shell Script** → paste the curl → Shortcut Details → **Add Keyboard Shortcut**
+- **Alfred** — Workflow → **Hotkey** trigger → **Run Script** (`/bin/bash`) → paste the curl
+- **Hammerspoon** — in `~/.hammerspoon/init.lua`:
+  ```lua
+  hs.hotkey.bind({"alt"}, "N", function()
+    hs.execute("/usr/bin/curl -s http://127.0.0.1:51234/toggle")
+  end)
+  ```
+
+### Why not the URI handler?
+
+`obsidian://floating-notes` also works, but opening a URL activates the Obsidian app — which briefly raises the main window on macOS. The HTTP endpoint bypasses app activation entirely and feels instant.
 
 ## Settings
 

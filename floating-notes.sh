@@ -1,21 +1,13 @@
 #!/bin/bash
-# Trigger Obsidian Floating Notes without focusing the main window
-# Use this script as a Raycast script command or bind to a global hotkey
 
-open "obsidian://floating-notes"
+# Raycast Script Command — toggles the Obsidian Floating Notes popout.
+# Usable as a generic shell script too (just run it).
+#
+# @raycast.schemaVersion 1
+# @raycast.title Toggle Floating Notes
+# @raycast.mode silent
+# @raycast.icon 📝
+# @raycast.packageName Obsidian
+# @raycast.description Toggle the Obsidian Floating Notes popout window.
 
-# Wait for the popout window to appear, then hide the main Obsidian window
-sleep 0.3
-osascript -e '
-tell application "System Events"
-    tell process "Obsidian"
-        set winCount to count of windows
-        if winCount > 1 then
-            -- The main window is usually window 1 (largest/oldest)
-            -- Focus the popout (last window) and keep main hidden
-            set frontmost to true
-            perform action "AXRaise" of window (winCount)
-        end if
-    end tell
-end tell
-'
+curl -s http://127.0.0.1:51234/toggle > /dev/null
