@@ -4,7 +4,7 @@
 	"version": "1.0.0",
 	"minAppVersion": "1.4.0",
 	"description": "Floating popout window for instant note capture, inspired by Raycast Notes.",
-	"author": "Cheng Hao",
+	"author": "Project Stain",
 	"authorUrl": "https://github.com/haotiencheng",
 	"isDesktopOnly": true
 }
