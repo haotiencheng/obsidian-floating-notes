@@ -1,8 +1,8 @@
 #!/bin/bash
-# Trigger Obsidian quick capture without focusing the main window
+# Trigger Obsidian Floating Notes without focusing the main window
 # Use this script as a Raycast script command or bind to a global hotkey
 
-open "obsidian://quick-capture"
+open "obsidian://floating-notes"
 
 # Wait for the popout window to appear, then hide the main Obsidian window
 sleep 0.3

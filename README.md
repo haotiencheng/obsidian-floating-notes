@@ -1,4 +1,4 @@
-# Quick Capture
+# Floating Notes
 
 A lightweight Obsidian plugin that opens a floating popout window for instant note capture — inspired by [Raycast Notes](https://www.raycast.com/core-features/notes).
 
@@ -6,8 +6,8 @@ A lightweight Obsidian plugin that opens a floating popout window for instant no
 
 Raycast Notes lets you jot down ideas instantly with a global hotkey and a clean, floating editor. macOS makes truly global hotkeys hard to wire up to a single Obsidian command, so this plugin combines:
 
-- An in-app command (`Toggle quick capture`) you can bind in Obsidian's hotkey settings
-- An `obsidian://quick-capture` URI handler you can trigger from Raycast / Shortcuts / Alfred for a system-wide hotkey
+- An in-app command (`Toggle floating notes`) you can bind in Obsidian's hotkey settings
+- An `obsidian://floating-notes` URI handler you can trigger from Raycast / Shortcuts / Alfred for a system-wide hotkey
 - A loopback HTTP endpoint (`http://127.0.0.1:51234/toggle`) for shell scripts and other tools
 
 The result: press one hotkey from anywhere, get a distraction-free Obsidian editor floating above your work, press again to hide it.
@@ -20,16 +20,16 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
   - **Current active note** — opens whatever note you're viewing
   - **Fixed note** — always opens a specific note (e.g. `Inbox.md`)
   - **New note every time** — creates a fresh timestamped note in a folder
-- **Multiple triggers** — Obsidian command, `obsidian://quick-capture` URI, or local HTTP endpoint
+- **Multiple triggers** — Obsidian command, `obsidian://floating-notes` URI, or local HTTP endpoint
 
 ## Installation
 
 ### Manual
 
 1. Download `main.js` and `manifest.json` from the [latest release](https://github.com/haotiencheng/obsidian-floating-notes/releases)
-2. Create a folder `<your-vault>/.obsidian/plugins/quick-capture/`
+2. Create a folder `<your-vault>/.obsidian/plugins/floating-notes/`
 3. Copy the files into that folder
-4. Enable **Quick Capture** in **Settings → Community plugins**
+4. Enable **Floating Notes** in **Settings → Community plugins**
 
 ### Build from source
 
@@ -46,17 +46,17 @@ Then copy `main.js` and `manifest.json` into your vault's plugin folder.
 
 ### Inside Obsidian
 
-Open **Settings → Hotkeys**, search for **Toggle quick capture**, and bind a key (no default is set).
+Open **Settings → Hotkeys**, search for **Toggle floating notes**, and bind a key (no default is set).
 
 ### Global hotkey (macOS)
 
 Pair the URI handler with a system-wide tool:
 
-- **Raycast** — Quicklink → URL `obsidian://quick-capture` → assign hotkey
-- **macOS Shortcuts** — New Shortcut → "Open URLs" → `obsidian://quick-capture` → assign keyboard shortcut
-- **Alfred** — Workflow → Hotkey trigger → Run Script: `open "obsidian://quick-capture"`
+- **Raycast** — Quicklink → URL `obsidian://floating-notes` → assign hotkey
+- **macOS Shortcuts** — New Shortcut → "Open URLs" → `obsidian://floating-notes` → assign keyboard shortcut
+- **Alfred** — Workflow → Hotkey trigger → Run Script: `open "obsidian://floating-notes"`
 
-A helper script `quick-capture.sh` is included that opens the URI and raises the popout window above the main Obsidian window.
+A helper script `floating-notes.sh` is included that opens the URI and raises the popout window above the main Obsidian window.
 
 ## Settings
 
@@ -75,7 +75,7 @@ A helper script `quick-capture.sh` is included that opens the URI and raises the
 
 ## Inspiration
 
-[Raycast Notes](https://www.raycast.com/core-features/notes) — a beautiful, instant note-taking experience via a global hotkey. Quick Capture brings that frictionless capture workflow into Obsidian.
+[Raycast Notes](https://www.raycast.com/core-features/notes) — a beautiful, instant note-taking experience via a global hotkey. Floating Notes brings that frictionless capture workflow into Obsidian.
 
 ## License
 

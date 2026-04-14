@@ -10,7 +10,7 @@ import * as http from "http";
 
 type CaptureMode = "active" | "fixed" | "new";
 
-interface QuickCaptureSettings {
+interface FloatingNotesSettings {
 	mode: CaptureMode;
 	fixedNotePath: string;
 	newNoteFolder: string;
@@ -18,7 +18,7 @@ interface QuickCaptureSettings {
 	port: number;
 }
 
-const DEFAULT_SETTINGS: QuickCaptureSettings = {
+const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	mode: "active",
 	fixedNotePath: "Inbox.md",
 	newNoteFolder: "Inbox",
@@ -39,8 +39,8 @@ interface PopoutWindow extends Window {
 	electronWindow?: ElectronBrowserWindow;
 }
 
-export default class QuickCapturePlugin extends Plugin {
-	settings: QuickCaptureSettings;
+export default class FloatingNotesPlugin extends Plugin {
+	settings: FloatingNotesSettings;
 	private captureWindow: WorkspaceWindow | null = null;
 	private popoutBW: ElectronBrowserWindow | null = null;
 	private popoutHidden = false;
@@ -51,12 +51,12 @@ export default class QuickCapturePlugin extends Plugin {
 		await this.loadSettings();
 
 		this.addCommand({
-			id: "toggle-quick-capture",
-			name: "Toggle quick capture",
+			id: "toggle-floating-notes",
+			name: "Toggle floating notes",
 			callback: () => this.toggleCapture(),
 		});
 
-		this.registerObsidianProtocolHandler("quick-capture", () => {
+		this.registerObsidianProtocolHandler("floating-notes", () => {
 			this.toggleCapture();
 		});
 
@@ -107,7 +107,7 @@ export default class QuickCapturePlugin extends Plugin {
 			})
 		);
 
-		this.addSettingTab(new QuickCaptureSettingTab(this.app, this));
+		this.addSettingTab(new FloatingNotesSettingTab(this.app, this));
 	}
 
 	onunload() {
@@ -233,17 +233,17 @@ export default class QuickCapturePlugin extends Plugin {
 			if (!this.app.vault.getAbstractFileByPath(folder)) {
 				await this.app.vault.createFolder(folder);
 			}
-			const title = `Quick Capture ${window.moment().format("YYYY-MM-DD HHmmss")}`;
+			const title = `Floating Note ${window.moment().format("YYYY-MM-DD HHmmss")}`;
 			const file = await this.app.vault.create(normalizePath(`${folder}/${title}.md`), "");
 			await leaf.openFile(file);
 		}
 	}
 }
 
-class QuickCaptureSettingTab extends PluginSettingTab {
-	plugin: QuickCapturePlugin;
+class FloatingNotesSettingTab extends PluginSettingTab {
+	plugin: FloatingNotesPlugin;
 
-	constructor(app: App, plugin: QuickCapturePlugin) {
+	constructor(app: App, plugin: FloatingNotesPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}

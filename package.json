@@ -1,5 +1,5 @@
 {
-	"name": "obsidian-quick-capture",
+	"name": "obsidian-floating-notes",
 	"version": "1.0.0",
 	"description": "Floating popout window for instant note capture in Obsidian.",
 	"main": "main.js",
@@ -11,8 +11,8 @@
 	"keywords": [
 		"obsidian",
 		"obsidian-plugin",
-		"quick-capture",
-		"floating-window"
+		"floating-notes",
+		"quick-capture"
 	],
 	"author": "Cheng Hao",
 	"license": "MIT",

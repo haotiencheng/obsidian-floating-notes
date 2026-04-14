@@ -1,6 +1,6 @@
 {
-	"id": "quick-capture",
-	"name": "Quick Capture",
+	"id": "floating-notes",
+	"name": "Floating Notes",
 	"version": "1.0.0",
 	"minAppVersion": "1.4.0",
 	"description": "Floating popout window for instant note capture, inspired by Raycast Notes.",
