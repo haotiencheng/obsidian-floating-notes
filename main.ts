@@ -35,6 +35,10 @@ interface ElectronBrowserWindow {
 	focus(): void;
 }
 
+interface PopoutWindow extends Window {
+	electronWindow?: ElectronBrowserWindow;
+}
+
 export default class QuickCapturePlugin extends Plugin {
 	settings: QuickCaptureSettings;
 	private captureWindow: WorkspaceWindow | null = null;
@@ -65,10 +69,12 @@ export default class QuickCapturePlugin extends Plugin {
 				this.pendingOpen = false;
 
 				const trySetup = () => {
+					const bw = (win.win as PopoutWindow).electronWindow;
+					if (!bw) {
+						window.setTimeout(trySetup, 200);
+						return;
+					}
 					try {
-						const req = (win.win as unknown as { require: (m: string) => { remote: { getCurrentWindow(): ElectronBrowserWindow } } }).require;
-						const { remote } = req("electron");
-						const bw = remote.getCurrentWindow();
 						this.popoutBW = bw;
 						bw.setSkipTaskbar(true);
 
