@@ -72,10 +72,19 @@ Pair one of those triggers with the system-wide launcher of your choice.
 
 **Raycast (macOS — recommended)**
 
-A ready-made Script Command is included in the repo.
+1. Open Raycast → run the **Create Script Command** command
+2. Fill in:
+   - **Template:** `Bash`
+   - **Title:** `Toggle Floating Notes`
+   - **Mode:** `silent`
+   - **Save Location:** any folder you like (Raycast will remember it)
+3. Open the created `.sh` file and replace the body with:
+   ```bash
+   curl -s http://127.0.0.1:51234/toggle > /dev/null
+   ```
+4. Back in Raycast → search `Toggle Floating Notes` → click the gear (`⌘ ⇧ ,`) → **Record Hotkey** → press your combo
 
-1. Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing `floating-notes.sh` (e.g. the cloned repo)
-2. Open Raycast → search `Toggle Floating Notes` → click the gear (`⌘ ⇧ ,`) → **Record Hotkey** → press your combo
+Alternatively, if you cloned this repo, point Raycast at the repo folder: **Preferences → Extensions → Script Commands → Add Directory** → pick the cloned folder. The included `floating-notes.sh` will auto-register.
 
 **macOS Shortcuts** (built-in, no extras)
 
