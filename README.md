@@ -72,19 +72,24 @@ Pair one of those triggers with the system-wide launcher of your choice.
 
 **Raycast (macOS — recommended)**
 
-1. Open Raycast → run the **Create Script Command** command
-2. Fill in:
-   - **Template:** `Bash`
-   - **Title:** `Toggle Floating Notes`
-   - **Mode:** `silent`
-   - **Save Location:** any folder you like (Raycast will remember it)
-3. Open the created `.sh` file and replace the body with:
+1. Create a file named `floating-notes.sh` anywhere you like (e.g. `~/raycast-scripts/`) with this content:
    ```bash
+   #!/bin/bash
+
+   # @raycast.schemaVersion 1
+   # @raycast.title Toggle Floating Notes
+   # @raycast.mode silent
+   # @raycast.icon 📝
+   # @raycast.packageName Obsidian
+   # @raycast.description Toggle the Obsidian Floating Notes popout window.
+
    curl -s http://127.0.0.1:51234/toggle > /dev/null
    ```
-4. Back in Raycast → search `Toggle Floating Notes` → click the gear (`⌘ ⇧ ,`) → **Record Hotkey** → press your combo
+2. Make it executable: `chmod +x ~/raycast-scripts/floating-notes.sh`
+3. Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing the script
+4. Open Raycast → search `Toggle Floating Notes` → click the gear (`⌘ ⇧ ,`) → **Record Hotkey** → press your combo
 
-Alternatively, if you cloned this repo, point Raycast at the repo folder: **Preferences → Extensions → Script Commands → Add Directory** → pick the cloned folder. The included `floating-notes.sh` will auto-register.
+If you cloned this repo, skip steps 1–2 and point Raycast at the cloned folder — `floating-notes.sh` is already there.
 
 **macOS Shortcuts** (built-in, no extras)
 
