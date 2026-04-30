@@ -24,6 +24,7 @@ interface FloatingNotesSettings {
 	alwaysOnTop: boolean;
 	port: number;
 	bounds: WindowBounds | null;
+	opacity: number;
 }
 
 const DEFAULT_SETTINGS: FloatingNotesSettings = {
@@ -33,7 +34,11 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	alwaysOnTop: true,
 	port: 51234,
 	bounds: null,
+	opacity: 1,
 };
+
+const MIN_OPACITY = 0.2;
+const MAX_OPACITY = 1;
 
 interface ElectronBrowserWindow {
 	isDestroyed(): boolean;
@@ -101,6 +106,8 @@ export default class FloatingNotesPlugin extends Plugin {
 							bw.setBounds(this.settings.bounds);
 						}
 
+						bw.setOpacity(this.clampedOpacity());
+
 						this.attachBoundsListener(bw);
 
 						bw.focus();
@@ -142,6 +149,18 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	private clampedOpacity(): number {
+		const v = this.settings.opacity;
+		if (!Number.isFinite(v)) return MAX_OPACITY;
+		return Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, v));
+	}
+
+	applyOpacity() {
+		if (!this.popoutBW || this.popoutBW.isDestroyed()) return;
+		if (this.popoutHidden) return;
+		this.popoutBW.setOpacity(this.clampedOpacity());
 	}
 
 	private startServer() {
@@ -291,7 +310,7 @@ export default class FloatingNotesPlugin extends Plugin {
 			if (!this.popoutHidden) {
 				this.hidePopout();
 			} else {
-				this.popoutBW.setOpacity(1);
+				this.popoutBW.setOpacity(this.clampedOpacity());
 				this.popoutBW.setIgnoreMouseEvents(false);
 				this.popoutBW.setSkipTaskbar(false);
 				this.popoutBW.focus();
@@ -404,6 +423,21 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.alwaysOnTop = value;
 						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Window opacity")
+			.setDesc("Transparency of the floating window (0.2–1.0)")
+			.addSlider((slider) =>
+				slider
+					.setLimits(0.2, 1, 0.05)
+					.setValue(this.plugin.settings.opacity)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.opacity = value;
+						await this.plugin.saveSettings();
+						this.plugin.applyOpacity();
 					})
 			);
 
