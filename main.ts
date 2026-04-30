@@ -8,7 +8,14 @@ import {
 } from "obsidian";
 import * as http from "http";
 
-type CaptureMode = "active" | "fixed" | "new";
+type CaptureMode = "active" | "fixed" | "new" | "daily";
+
+interface WindowBounds {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
 
 interface FloatingNotesSettings {
 	mode: CaptureMode;
@@ -16,6 +23,7 @@ interface FloatingNotesSettings {
 	newNoteFolder: string;
 	alwaysOnTop: boolean;
 	port: number;
+	bounds: WindowBounds | null;
 }
 
 const DEFAULT_SETTINGS: FloatingNotesSettings = {
@@ -24,6 +32,7 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	newNoteFolder: "Inbox",
 	alwaysOnTop: true,
 	port: 51234,
+	bounds: null,
 };
 
 interface ElectronBrowserWindow {
@@ -33,6 +42,10 @@ interface ElectronBrowserWindow {
 	setOpacity(opacity: number): void;
 	setIgnoreMouseEvents(ignore: boolean): void;
 	focus(): void;
+	getBounds(): WindowBounds;
+	setBounds(bounds: Partial<WindowBounds>): void;
+	on(event: "resize" | "move" | "moved", listener: () => void): void;
+	off(event: "resize" | "move" | "moved", listener: () => void): void;
 }
 
 interface PopoutWindow extends Window {
@@ -46,6 +59,8 @@ export default class FloatingNotesPlugin extends Plugin {
 	private popoutHidden = false;
 	private pendingOpen = false;
 	private server: http.Server | null = null;
+	private boundsSaveTimer: number | null = null;
+	private boundsListener: (() => void) | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -81,6 +96,13 @@ export default class FloatingNotesPlugin extends Plugin {
 						if (this.settings.alwaysOnTop) {
 							bw.setAlwaysOnTop(true, "floating");
 						}
+
+						if (this.settings.bounds) {
+							bw.setBounds(this.settings.bounds);
+						}
+
+						this.attachBoundsListener(bw);
+
 						bw.focus();
 
 						win.win.document.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -182,10 +204,81 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	private resetState() {
+		this.detachBoundsListener();
 		this.captureWindow = null;
 		this.popoutBW = null;
 		this.popoutHidden = false;
 		this.pendingOpen = false;
+	}
+
+	private attachBoundsListener(bw: ElectronBrowserWindow) {
+		const handler = () => {
+			if (this.boundsSaveTimer !== null) {
+				window.clearTimeout(this.boundsSaveTimer);
+			}
+			this.boundsSaveTimer = window.setTimeout(() => {
+				this.boundsSaveTimer = null;
+				if (!this.popoutBW || this.popoutBW.isDestroyed()) return;
+				if (this.popoutHidden) return;
+				const b = this.popoutBW.getBounds();
+				this.settings.bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+				this.saveSettings();
+			}, 400);
+		};
+		this.boundsListener = handler;
+		bw.on("resize", handler);
+		bw.on("moved", handler);
+	}
+
+	private detachBoundsListener() {
+		if (this.boundsSaveTimer !== null) {
+			window.clearTimeout(this.boundsSaveTimer);
+			this.boundsSaveTimer = null;
+			if (this.popoutBW && !this.popoutBW.isDestroyed() && !this.popoutHidden) {
+				try {
+					const b = this.popoutBW.getBounds();
+					this.settings.bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+					this.saveSettings();
+				} catch {
+					/* ignore */
+				}
+			}
+		}
+		if (this.popoutBW && this.boundsListener && !this.popoutBW.isDestroyed()) {
+			try {
+				this.popoutBW.off("resize", this.boundsListener);
+				this.popoutBW.off("moved", this.boundsListener);
+			} catch {
+				/* ignore */
+			}
+		}
+		this.boundsListener = null;
+	}
+
+	private async resolveDailyNote() {
+		const internal = (this.app as unknown as {
+			internalPlugins: { getPluginById(id: string): { instance?: { options?: { folder?: string; format?: string; template?: string } } } | null };
+		}).internalPlugins.getPluginById("daily-notes");
+		const opts = internal?.instance?.options ?? {};
+		const format = opts.format || "YYYY-MM-DD";
+		const folder = opts.folder || "";
+		const filename = window.moment().format(format);
+		const path = normalizePath(folder ? `${folder}/${filename}.md` : `${filename}.md`);
+		let file = this.app.vault.getFileByPath(path);
+		if (!file) {
+			const dir = path.substring(0, path.lastIndexOf("/"));
+			if (dir && !this.app.vault.getAbstractFileByPath(dir)) {
+				await this.app.vault.createFolder(dir);
+			}
+			let body = "";
+			if (opts.template) {
+				const tplPath = normalizePath(opts.template.endsWith(".md") ? opts.template : `${opts.template}.md`);
+				const tpl = this.app.vault.getFileByPath(tplPath);
+				if (tpl) body = await this.app.vault.read(tpl);
+			}
+			file = await this.app.vault.create(path, body);
+		}
+		return file;
 	}
 
 	async toggleCapture() {
@@ -228,6 +321,9 @@ export default class FloatingNotesPlugin extends Plugin {
 				file = await this.app.vault.create(filePath, "");
 			}
 			await leaf.openFile(file);
+		} else if (this.settings.mode === "daily") {
+			const file = await this.resolveDailyNote();
+			if (file) await leaf.openFile(file);
 		} else if (this.settings.mode === "new") {
 			const folder = normalizePath(this.settings.newNoteFolder);
 			if (!this.app.vault.getAbstractFileByPath(folder)) {
@@ -260,6 +356,7 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 					.addOption("active", "Current active note")
 					.addOption("fixed", "Fixed note")
 					.addOption("new", "Create new note every time")
+					.addOption("daily", "Today's daily note")
 					.setValue(this.plugin.settings.mode)
 					.onChange(async (value) => {
 						this.plugin.settings.mode = value as CaptureMode;
