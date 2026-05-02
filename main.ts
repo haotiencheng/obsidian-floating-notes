@@ -1,5 +1,6 @@
 import {
 	App,
+	Notice,
 	Plugin,
 	PluginSettingTab,
 	Setting,
@@ -66,6 +67,8 @@ export default class FloatingNotesPlugin extends Plugin {
 	private server: http.Server | null = null;
 	private boundsSaveTimer: number | null = null;
 	private boundsListener: (() => void) | null = null;
+	private trySetupTimer: number | null = null;
+	private serverRetryTimer: number | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -89,9 +92,10 @@ export default class FloatingNotesPlugin extends Plugin {
 				this.pendingOpen = false;
 
 				const trySetup = () => {
+					this.trySetupTimer = null;
 					const bw = (win.win as PopoutWindow).electronWindow;
 					if (!bw) {
-						window.setTimeout(trySetup, 200);
+						this.trySetupTimer = window.setTimeout(trySetup, 200);
 						return;
 					}
 					try {
@@ -112,7 +116,7 @@ export default class FloatingNotesPlugin extends Plugin {
 
 						bw.focus();
 
-						win.win.document.addEventListener("keydown", (e: KeyboardEvent) => {
+						this.registerDomEvent(win.win.document, "keydown", (e: KeyboardEvent) => {
 							if (e.key !== "Escape") return;
 							const doc = win.win.document;
 							const hasModal = doc.querySelector(".modal-container, .suggestion-container, .menu");
@@ -121,10 +125,10 @@ export default class FloatingNotesPlugin extends Plugin {
 							this.hidePopout();
 						});
 					} catch {
-						window.setTimeout(trySetup, 200);
+						this.trySetupTimer = window.setTimeout(trySetup, 200);
 					}
 				};
-				window.setTimeout(trySetup, 100);
+				this.trySetupTimer = window.setTimeout(trySetup, 100);
 			})
 		);
 
@@ -140,6 +144,14 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	onunload() {
+		if (this.trySetupTimer !== null) {
+			window.clearTimeout(this.trySetupTimer);
+			this.trySetupTimer = null;
+		}
+		if (this.boundsSaveTimer !== null) {
+			window.clearTimeout(this.boundsSaveTimer);
+			this.boundsSaveTimer = null;
+		}
 		this.stopServer();
 	}
 
@@ -191,21 +203,33 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.server.on("error", (e: NodeJS.ErrnoException) => {
 			if (e.code === "EADDRINUSE") {
 				this.settings.port++;
+				this.saveSettings();
+				new Notice(`Floating Notes: port in use, switched to ${this.settings.port}`);
 				this.startServer();
 			} else {
-				window.setTimeout(() => this.startServer(), 1000);
+				this.serverRetryTimer = window.setTimeout(() => {
+					this.serverRetryTimer = null;
+					this.startServer();
+				}, 1000);
 			}
 		});
 
 		this.server.on("close", () => {
 			if (this.server) {
 				this.server = null;
-				window.setTimeout(() => this.startServer(), 1000);
+				this.serverRetryTimer = window.setTimeout(() => {
+					this.serverRetryTimer = null;
+					this.startServer();
+				}, 1000);
 			}
 		});
 	}
 
 	private stopServer() {
+		if (this.serverRetryTimer !== null) {
+			window.clearTimeout(this.serverRetryTimer);
+			this.serverRetryTimer = null;
+		}
 		if (this.server) {
 			const s = this.server;
 			this.server = null;
