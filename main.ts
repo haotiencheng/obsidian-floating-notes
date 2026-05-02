@@ -74,13 +74,15 @@ export default class FloatingNotesPlugin extends Plugin {
 		await this.loadSettings();
 
 		this.addCommand({
-			id: "toggle-floating-notes",
-			name: "Toggle floating notes",
-			callback: () => this.toggleCapture(),
+			id: "toggle-popout",
+			name: "Toggle popout",
+			callback: () => {
+				void this.toggleCapture();
+			},
 		});
 
 		this.registerObsidianProtocolHandler("floating-notes", () => {
-			this.toggleCapture();
+			void this.toggleCapture();
 		});
 
 		this.startServer();
@@ -187,7 +189,7 @@ export default class FloatingNotesPlugin extends Plugin {
 			}
 
 			if (req.url === "/toggle") {
-				this.toggleCapture();
+				void this.toggleCapture();
 				res.writeHead(200, { "Content-Type": "application/json" });
 				res.end(JSON.stringify({ ok: true }));
 			} else {
@@ -203,7 +205,7 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.server.on("error", (e: NodeJS.ErrnoException) => {
 			if (e.code === "EADDRINUSE") {
 				this.settings.port++;
-				this.saveSettings();
+				void this.saveSettings();
 				new Notice(`Floating Notes: port in use, switched to ${this.settings.port}`);
 				this.startServer();
 			} else {
@@ -265,7 +267,7 @@ export default class FloatingNotesPlugin extends Plugin {
 				if (this.popoutHidden) return;
 				const b = this.popoutBW.getBounds();
 				this.settings.bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
-				this.saveSettings();
+				void this.saveSettings();
 			}, 400);
 		};
 		this.boundsListener = handler;
@@ -281,7 +283,7 @@ export default class FloatingNotesPlugin extends Plugin {
 				try {
 					const b = this.popoutBW.getBounds();
 					this.settings.bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
-					this.saveSettings();
+					void this.saveSettings();
 				} catch {
 					/* ignore */
 				}
@@ -440,7 +442,7 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Always on top")
-			.setDesc("Keep the capture window floating above all other windows")
+			.setDesc("Keep the popout above all other apps")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.alwaysOnTop)
