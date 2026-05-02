@@ -130,7 +130,29 @@ Complex modification JSON — import into your config:
 }
 ```
 
-**Windows** (AutoHotkey v2)
+**Raycast (Windows)**
+
+1. Create a file named `floating-notes.bat` (e.g. in `%USERPROFILE%\raycast-scripts\`) with this content:
+   ```bat
+   @echo off >nul 2>&1
+   chcp 65001 >nul 2>&1
+   setlocal
+
+   REM @raycast.schemaVersion 1
+   REM @raycast.title Toggle Floating Notes
+   REM @raycast.mode silent
+   REM @raycast.icon 📝
+   REM @raycast.packageName Obsidian
+   REM @raycast.description Toggle the Obsidian Floating Notes popout window.
+
+   curl.exe -s -m 2 -o nul "http://127.0.0.1:51234/toggle" >nul 2>&1
+
+   exit /b 0
+   ```
+2. Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing the script
+3. Open Raycast → search `Toggle Floating Notes` → assign a hotkey
+
+**Windows** (AutoHotkey v2 — alternative to Raycast)
 
 ```ahk
 !n::RunWait("curl.exe -s http://127.0.0.1:51234/toggle", , "Hide")
