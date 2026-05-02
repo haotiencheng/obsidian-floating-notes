@@ -1,7 +1,7 @@
 {
 	"id": "floating-notes",
 	"name": "Floating Notes",
-	"version": "1.2.0",
+	"version": "1.2.1",
 	"minAppVersion": "1.4.0",
 	"description": "Floating popout window for instant note capture, inspired by Raycast Notes.",
 	"author": "Project Stain",
