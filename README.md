@@ -108,6 +108,10 @@ Pair one of those triggers with the system-wide launcher of your choice.
 
 If you cloned this repo, skip steps 1–2 and point Raycast at the cloned folder — `floating-notes.sh` is already there.
 
+The recipes below use a bare `curl`, which toggles only when Obsidian is already
+running. To get auto-launch in any of them, call the script instead of `curl`:
+`~/raycast-scripts/floating-notes.sh`.
+
 **macOS Shortcuts** (built-in, no extras)
 
 1. Shortcuts app → `+` new shortcut, name it `Floating Notes`
@@ -182,6 +186,30 @@ Add to `~/.config/sxhkd/sxhkdrc`:
 alt + n
     curl -s http://127.0.0.1:51234/toggle > /dev/null
 ```
+
+## Upgrading
+
+**From 1.2.x to 1.3.x** — the plugin update is automatic, but the trigger script is not.
+Your launcher runs *your own copy* of `floating-notes.sh`, so it keeps the old one-line
+`curl` until you replace it. Without that, everything still works except auto-launch.
+
+If you cloned this repo and pointed your launcher at the clone:
+
+```bash
+git pull
+```
+
+If you copied the script somewhere (e.g. `~/scripts/floating-notes.sh`), replace the body
+with the current version, keeping your own `@raycast.*` metadata lines so your recorded
+hotkey stays bound:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/haotiencheng/obsidian-floating-notes/main/floating-notes.sh \
+  -o ~/scripts/floating-notes.sh
+chmod +x ~/scripts/floating-notes.sh
+```
+
+Changed the port in settings? Export it for the script: `FLOATING_NOTES_PORT=51235`.
 
 ## Settings
 

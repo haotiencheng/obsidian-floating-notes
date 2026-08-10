@@ -72,6 +72,8 @@ export default class FloatingNotesPlugin extends Plugin {
 	private boundsListener: (() => void) | null = null;
 	private trySetupTimer: number | null = null;
 	private serverRetryTimer: number | null = null;
+	private pendingOpenTimer: number | null = null;
+	private queuedToggle = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -93,49 +95,8 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("window-open", (win: WorkspaceWindow) => {
 				if (!this.pendingOpen) return;
-				this.captureWindow = win;
-				this.pendingOpen = false;
-
-				const trySetup = () => {
-					this.trySetupTimer = null;
-					const bw = (win.win as PopoutWindow).electronWindow;
-					if (!bw) {
-						this.trySetupTimer = window.setTimeout(trySetup, 200);
-						return;
-					}
-					try {
-						this.popoutBW = bw;
-						bw.setSkipTaskbar(true);
-
-						if (this.settings.alwaysOnTop) {
-							bw.setAlwaysOnTop(true, "floating");
-						}
-
-						if (this.settings.bounds) {
-							bw.setBounds(this.settings.bounds);
-						}
-
-						bw.setOpacity(this.clampedOpacity());
-
-						this.applyTabBarSetting();
-
-						this.attachBoundsListener(bw);
-
-						bw.focus();
-
-						this.registerDomEvent(win.win.document, "keydown", (e: KeyboardEvent) => {
-							if (e.key !== "Escape") return;
-							const doc = win.win.document;
-							const hasModal = doc.querySelector(".modal-container, .suggestion-container, .menu");
-							if (hasModal) return;
-							e.preventDefault();
-							this.hidePopout();
-						});
-					} catch {
-						this.trySetupTimer = window.setTimeout(trySetup, 200);
-					}
-				};
-				this.trySetupTimer = window.setTimeout(trySetup, 100);
+				this.clearPendingOpen();
+				this.adoptPopout(win, { restoreBounds: true, focus: true });
 			})
 		);
 
@@ -148,9 +109,88 @@ export default class FloatingNotesPlugin extends Plugin {
 		);
 
 		this.addSettingTab(new FloatingNotesSettingTab(this.app, this));
+
+		// Obsidian restores popout windows from the saved layout on startup, before
+		// plugins load. Adopt that window instead of opening a second one.
+		this.app.workspace.onLayoutReady(() => {
+			if (!this.captureWindow) {
+				const restored = this.findExistingPopout();
+				if (restored) {
+					this.adoptPopout(restored, { restoreBounds: false, focus: false });
+				}
+			}
+			if (this.queuedToggle) {
+				this.queuedToggle = false;
+				void this.toggleCapture();
+			}
+		});
+	}
+
+	private findExistingPopout(): WorkspaceWindow | null {
+		let found: WorkspaceWindow | null = null;
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (found) return;
+			const container = leaf.getContainer();
+			if (container instanceof WorkspaceWindow) {
+				found = container;
+			}
+		});
+		return found;
+	}
+
+	private adoptPopout(win: WorkspaceWindow, opts: { restoreBounds: boolean; focus: boolean }) {
+		this.captureWindow = win;
+		if (this.trySetupTimer !== null) {
+			window.clearTimeout(this.trySetupTimer);
+			this.trySetupTimer = null;
+		}
+
+		const trySetup = () => {
+			this.trySetupTimer = null;
+			const bw = (win.win as PopoutWindow).electronWindow;
+			if (!bw) {
+				this.trySetupTimer = window.setTimeout(trySetup, 200);
+				return;
+			}
+			try {
+				this.popoutBW = bw;
+				this.popoutHidden = false;
+				bw.setSkipTaskbar(true);
+
+				if (this.settings.alwaysOnTop) {
+					bw.setAlwaysOnTop(true, "floating");
+				}
+
+				if (opts.restoreBounds && this.settings.bounds) {
+					bw.setBounds(this.settings.bounds);
+				}
+
+				bw.setOpacity(this.clampedOpacity());
+				bw.setIgnoreMouseEvents(false);
+
+				this.applyTabBarSetting();
+
+				this.attachBoundsListener(bw);
+
+				if (opts.focus) bw.focus();
+
+				this.registerDomEvent(win.win.document, "keydown", (e: KeyboardEvent) => {
+					if (e.key !== "Escape") return;
+					const doc = win.win.document;
+					const hasModal = doc.querySelector(".modal-container, .suggestion-container, .menu");
+					if (hasModal) return;
+					e.preventDefault();
+					this.hidePopout();
+				});
+			} catch {
+				this.trySetupTimer = window.setTimeout(trySetup, 200);
+			}
+		};
+		this.trySetupTimer = window.setTimeout(trySetup, 100);
 	}
 
 	onunload() {
+		this.clearPendingOpen();
 		if (this.trySetupTimer !== null) {
 			window.clearTimeout(this.trySetupTimer);
 			this.trySetupTimer = null;
@@ -260,12 +300,29 @@ export default class FloatingNotesPlugin extends Plugin {
 		}
 	}
 
+	private showPopout() {
+		if (!this.popoutBW || this.popoutBW.isDestroyed()) return;
+		this.popoutBW.setOpacity(this.clampedOpacity());
+		this.popoutBW.setIgnoreMouseEvents(false);
+		this.popoutBW.setSkipTaskbar(false);
+		this.popoutBW.focus();
+		this.popoutHidden = false;
+	}
+
+	private clearPendingOpen() {
+		if (this.pendingOpenTimer !== null) {
+			window.clearTimeout(this.pendingOpenTimer);
+			this.pendingOpenTimer = null;
+		}
+		this.pendingOpen = false;
+	}
+
 	private resetState() {
 		this.detachBoundsListener();
 		this.captureWindow = null;
 		this.popoutBW = null;
 		this.popoutHidden = false;
-		this.pendingOpen = false;
+		this.clearPendingOpen();
 	}
 
 	private attachBoundsListener(bw: ElectronBrowserWindow) {
@@ -339,6 +396,13 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	async toggleCapture() {
+		// A trigger can arrive while Obsidian is still starting up (the local
+		// server is listening before the workspace exists). Run it once ready.
+		if (!this.app.workspace.layoutReady) {
+			this.queuedToggle = true;
+			return;
+		}
+
 		if (this.captureWindow) {
 			if (!this.popoutBW) return;
 			if (this.popoutBW.isDestroyed()) {
@@ -348,17 +412,18 @@ export default class FloatingNotesPlugin extends Plugin {
 			if (!this.popoutHidden) {
 				this.hidePopout();
 			} else {
-				this.popoutBW.setOpacity(this.clampedOpacity());
-				this.popoutBW.setIgnoreMouseEvents(false);
-				this.popoutBW.setSkipTaskbar(false);
-				this.popoutBW.focus();
-				this.popoutHidden = false;
+				this.showPopout();
 			}
 			return;
 		}
 
 		if (this.pendingOpen) return;
 		this.pendingOpen = true;
+		// Safety net: if "window-open" never arrives, do not block future toggles.
+		this.pendingOpenTimer = window.setTimeout(() => {
+			this.pendingOpenTimer = null;
+			this.pendingOpen = false;
+		}, 5000);
 
 		const leaf = this.app.workspace.getLeaf("window");
 
