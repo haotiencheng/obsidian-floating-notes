@@ -30,11 +30,14 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 
 ## Installation
 
-### From the community plugin listing
+### From the plugin store (recommended)
 
-Open the [Floating Notes listing](https://community.obsidian.md/plugins/floating-notes) and
-click **Add to Obsidian**, or search for "Floating Notes" in
-**Settings → Community plugins → Browse**.
+1. Obsidian → **Settings → Community plugins → Browse**
+2. Search for **Floating Notes**
+3. **Install**, then **Enable**
+
+Or open the [listing](https://community.obsidian.md/plugins/floating-notes) in a browser and
+click **Add to Obsidian**.
 
 ### Manual
 
