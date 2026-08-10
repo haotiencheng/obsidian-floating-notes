@@ -16,6 +16,8 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 
 - **Toggle popout** — show / hide a native Obsidian editor window without losing state
 - **Always on top** — popout floats above other apps (optional)
+- **Hide tab bar** — strip the tab bar for a bare capture window (optional)
+- **Auto-launch** — the bundled script starts Obsidian if it isn't running, then toggles
 - **Three capture modes**
   - **Current active note** — opens whatever note you're viewing
   - **Fixed note** — always opens a specific note (e.g. `Inbox.md`)
@@ -83,7 +85,22 @@ Pair one of those triggers with the system-wide launcher of your choice.
    # @raycast.packageName Obsidian
    # @raycast.description Toggle the Obsidian Floating Notes popout window.
 
-   curl -s http://127.0.0.1:51234/toggle > /dev/null
+   PORT="${FLOATING_NOTES_PORT:-51234}"
+   URL="http://127.0.0.1:${PORT}/toggle"
+
+   toggle() { curl -fsS --max-time 2 "$URL" > /dev/null 2>&1; }
+
+   toggle && exit 0
+
+   # Obsidian is closed or still starting: launch it, then retry.
+   open -a Obsidian > /dev/null 2>&1 || open "obsidian://" > /dev/null 2>&1
+
+   deadline=$((SECONDS + 30))
+   while [ "$SECONDS" -lt "$deadline" ]; do
+     sleep 0.5
+     toggle && exit 0
+   done
+   exit 1
    ```
 2. Make it executable: `chmod +x ~/raycast-scripts/floating-notes.sh`
 3. Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing the script
@@ -174,6 +191,7 @@ alt + n
 | Fixed note path | Path to the note (when mode is "Fixed note") | `Inbox.md` |
 | New note folder | Folder for new notes (when mode is "New note every time") | `Inbox` |
 | Always on top | Float popout above other windows | On |
+| Hide tab bar | Hide the popout's tab bar (a 12px strip stays draggable) | Off |
 | Server port | Local HTTP port for external triggers | `51234` |
 
 ## Notes

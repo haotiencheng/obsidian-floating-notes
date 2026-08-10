@@ -26,6 +26,7 @@ interface FloatingNotesSettings {
 	port: number;
 	bounds: WindowBounds | null;
 	opacity: number;
+	hideTabBar: boolean;
 }
 
 const DEFAULT_SETTINGS: FloatingNotesSettings = {
@@ -36,10 +37,12 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	port: 51234,
 	bounds: null,
 	opacity: 1,
+	hideTabBar: false,
 };
 
 const MIN_OPACITY = 0.2;
 const MAX_OPACITY = 1;
+const HIDE_TAB_BAR_CLASS = "floating-notes-no-tabs";
 
 interface ElectronBrowserWindow {
 	isDestroyed(): boolean;
@@ -114,6 +117,8 @@ export default class FloatingNotesPlugin extends Plugin {
 
 						bw.setOpacity(this.clampedOpacity());
 
+						this.applyTabBarSetting();
+
 						this.attachBoundsListener(bw);
 
 						bw.focus();
@@ -170,6 +175,12 @@ export default class FloatingNotesPlugin extends Plugin {
 		const v = this.settings.opacity;
 		if (!Number.isFinite(v)) return MAX_OPACITY;
 		return Math.min(MAX_OPACITY, Math.max(MIN_OPACITY, v));
+	}
+
+	applyTabBarSetting() {
+		const body = this.captureWindow?.win.document.body;
+		if (!body) return;
+		body.classList.toggle(HIDE_TAB_BAR_CLASS, this.settings.hideTabBar);
 	}
 
 	applyOpacity() {
@@ -450,6 +461,19 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						this.plugin.settings.alwaysOnTop = value;
 						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Hide tab bar")
+			.setDesc("Hide the tab bar in the popout. A thin strip at the top stays draggable so the window can still be moved.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.hideTabBar)
+					.onChange(async (value) => {
+						this.plugin.settings.hideTabBar = value;
+						await this.plugin.saveSettings();
+						this.plugin.applyTabBarSetting();
 					})
 			);
 

@@ -1,0 +1,15 @@
+/* Applied to the popout window only, when "Hide tab bar" is enabled. */
+
+body.floating-notes-no-tabs .workspace-tab-header-container {
+	display: none;
+}
+
+/* The tab bar is the popout's drag handle, so replace it with a slim strip. */
+body.floating-notes-no-tabs .workspace-split.mod-root::before {
+	content: "";
+	display: block;
+	height: 12px;
+	flex-shrink: 0;
+	-webkit-app-region: drag;
+	app-region: drag;
+}
