@@ -1,6 +1,10 @@
 # Floating Notes
 
+[![Obsidian plugin listing](https://img.shields.io/badge/Obsidian-Floating%20Notes-7c3aed?logo=obsidian&logoColor=white)](https://community.obsidian.md/plugins/floating-notes)
+
 A lightweight Obsidian plugin that opens a floating popout window for instant note capture — inspired by [Raycast Notes](https://www.raycast.com/core-features/notes).
+
+Listing: **https://community.obsidian.md/plugins/floating-notes** — or [add it to Obsidian directly](obsidian://show-plugin?id=floating-notes).
 
 ## Why
 
@@ -26,9 +30,15 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 
 ## Installation
 
+### From the community plugin listing
+
+Open the [Floating Notes listing](https://community.obsidian.md/plugins/floating-notes) and
+click **Add to Obsidian**, or search for "Floating Notes" in
+**Settings → Community plugins → Browse**.
+
 ### Manual
 
-1. Download `main.js` and `manifest.json` from the [latest release](https://github.com/haotiencheng/obsidian-floating-notes/releases)
+1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/haotiencheng/obsidian-floating-notes/releases)
 2. Create a folder `<your-vault>/.obsidian/plugins/floating-notes/`
 3. Copy the files into that folder
 4. Enable **Floating Notes** in **Settings → Community plugins**
