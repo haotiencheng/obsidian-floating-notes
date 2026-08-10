@@ -118,9 +118,9 @@ Pair one of those triggers with the system-wide launcher of your choice.
 
 If you cloned this repo, skip steps 1–2 and point Raycast at the cloned folder — `floating-notes.sh` is already there.
 
-The recipes below use a bare `curl`, which toggles only when Obsidian is already
-running. To get auto-launch in any of them, call the script instead of `curl`:
-`~/raycast-scripts/floating-notes.sh`.
+The macOS recipes below use a bare `curl`, which toggles only when Obsidian is already
+running. For auto-launch, call the script instead of `curl`:
+`~/raycast-scripts/floating-notes.sh`. Windows and Linux equivalents are further down.
 
 **macOS Shortcuts** (built-in, no extras)
 
@@ -145,6 +145,7 @@ running. To get auto-launch in any of them, call the script instead of `curl`:
 Add to `~/.hammerspoon/init.lua`:
 ```lua
 hs.hotkey.bind({"alt"}, "N", function()
+  -- swap for os.getenv("HOME") .. "/raycast-scripts/floating-notes.sh" to auto-launch
   hs.execute("/usr/bin/curl -s http://127.0.0.1:51234/toggle")
 end)
 ```
@@ -157,6 +158,7 @@ Complex modification JSON — import into your config:
 {
   "from": { "key_code": "n", "modifiers": { "mandatory": ["right_option"] } },
   "to": [{ "shell_command": "/usr/bin/curl -s http://127.0.0.1:51234/toggle" }],
+  "//": "point shell_command at ~/raycast-scripts/floating-notes.sh to auto-launch Obsidian",
   "type": "basic"
 }
 ```
@@ -176,9 +178,19 @@ Complex modification JSON — import into your config:
    REM @raycast.packageName Obsidian
    REM @raycast.description Toggle the Obsidian Floating Notes popout window.
 
-   curl.exe -s -m 2 -o nul "http://127.0.0.1:51234/toggle" >nul 2>&1
+   set "URL=http://127.0.0.1:51234/toggle"
 
-   exit /b 0
+   curl.exe -fsS -m 2 -o nul "%URL%" >nul 2>&1 && exit /b 0
+
+   REM Obsidian is closed or still starting: launch it, then retry for 30s.
+   start "" "obsidian://"
+
+   for /l %%i in (1,1,30) do (
+     timeout /t 1 /nobreak >nul
+     curl.exe -fsS -m 2 -o nul "%URL%" >nul 2>&1 && exit /b 0
+   )
+
+   exit /b 1
    ```
 2. Raycast → **Preferences → Extensions → Script Commands → Add Directory** → pick the folder containing the script
 3. Open Raycast → search `Toggle Floating Notes` → assign a hotkey
@@ -186,15 +198,50 @@ Complex modification JSON — import into your config:
 **Windows** (AutoHotkey v2 — alternative to Raycast)
 
 ```ahk
-!n::RunWait("curl.exe -s http://127.0.0.1:51234/toggle", , "Hide")
+!n:: {
+    if Toggle()
+        return
+    Run("obsidian://")                      ; closed or still starting
+    deadline := A_TickCount + 30000
+    while (A_TickCount < deadline) {
+        Sleep(500)
+        if Toggle()
+            return
+    }
+}
+
+Toggle() {
+    return RunWait('curl.exe -fsS -m 2 -o NUL "http://127.0.0.1:51234/toggle"', , "Hide") = 0
+}
 ```
 
 **Linux** (e.g. `sxhkd`)
 
-Add to `~/.config/sxhkd/sxhkdrc`:
+Save this as `~/bin/floating-notes.sh` and `chmod +x` it:
+```bash
+#!/bin/sh
+URL="http://127.0.0.1:${FLOATING_NOTES_PORT:-51234}/toggle"
+
+toggle() { curl -fsS --max-time 2 "$URL" > /dev/null 2>&1; }
+
+toggle && exit 0
+
+# Obsidian is closed or still starting: launch it, then retry.
+(obsidian > /dev/null 2>&1 &) || xdg-open "obsidian://" > /dev/null 2>&1
+
+i=0
+while [ "$i" -lt 60 ]; do
+	sleep 0.5
+	toggle && exit 0
+	i=$((i + 1))
+done
+exit 1
+```
+
+Then add to `~/.config/sxhkd/sxhkdrc`:
 ```
 alt + n
-    curl -s http://127.0.0.1:51234/toggle > /dev/null
+    ~/bin/floating-notes.sh
 ```
 
 ## Upgrading
