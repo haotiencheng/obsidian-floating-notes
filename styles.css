@@ -4,12 +4,24 @@ body.floating-notes-no-tabs .workspace-tab-header-container {
 	display: none;
 }
 
-/* The tab bar is the popout's drag handle, so replace it with a slim strip. */
-body.floating-notes-no-tabs .workspace-split.mod-root::before {
-	content: "";
-	display: block;
-	height: 12px;
-	flex-shrink: 0;
+/*
+ * Without the tab bar, .view-header becomes the top row: its back/forward
+ * buttons end up underneath the macOS traffic lights. Drop them (the popout is
+ * a capture window, not a browser) and keep the row clear of the lights.
+ */
+body.floating-notes-no-tabs .view-header-nav-buttons {
+	display: none;
+}
+
+body.floating-notes-no-tabs .view-header {
+	padding-left: 78px;
+	/* The tab bar used to be the drag handle; the header takes over. */
 	-webkit-app-region: drag;
 	app-region: drag;
+}
+
+body.floating-notes-no-tabs .view-header button,
+body.floating-notes-no-tabs .view-header .view-header-title-container {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
 }
