@@ -283,7 +283,7 @@ Changed the port in settings? Export it for the script: `FLOATING_NOTES_PORT=512
 | Always on top | Float popout above other windows | On |
 | Hide tab bar | Hide the popout's tab bar (a 12px strip stays draggable) | Off |
 | Show side panels | File explorer (left) + backlinks (right) panels in the popout | Off |
-| Keep the main window awake | Stop Electron throttling the minimized main window, so plugin content still renders in the popout | On |
+| Keep the main window awake | Stop Electron throttling the minimized main window, so plugin content still renders in the popout | Off |
 | Server port | Local HTTP port for external triggers | `51234` |
 
 ## Notes
