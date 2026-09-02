@@ -30,6 +30,7 @@ interface FloatingNotesSettings {
 	opacity: number;
 	hideTabBar: boolean;
 	showSidePanel: boolean;
+	disableBackgroundThrottling: boolean;
 	leftPanelOpen: boolean;
 	rightPanelOpen: boolean;
 	leftPanelWidth: number;
@@ -46,6 +47,7 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	opacity: 1,
 	hideTabBar: false,
 	showSidePanel: false,
+	disableBackgroundThrottling: true,
 	leftPanelOpen: true,
 	rightPanelOpen: true,
 	leftPanelWidth: 18,
@@ -93,6 +95,7 @@ interface ElectronBrowserWindow {
 	focus(): void;
 	getBounds(): WindowBounds;
 	setBounds(bounds: Partial<WindowBounds>): void;
+	webContents?: { setBackgroundThrottling?(allowed: boolean): void };
 	on(event: "resize" | "move" | "moved", listener: () => void): void;
 	off(event: "resize" | "move" | "moved", listener: () => void): void;
 }
@@ -131,6 +134,7 @@ export default class FloatingNotesPlugin extends Plugin {
 		});
 
 		this.startServer();
+		this.applyBackgroundThrottling();
 
 		this.registerEvent(
 			this.app.workspace.on("window-open", (win: WorkspaceWindow) => {
@@ -221,6 +225,7 @@ export default class FloatingNotesPlugin extends Plugin {
 				bw.setIgnoreMouseEvents(false);
 
 				this.applyTabBarSetting();
+				this.applyBackgroundThrottling();
 				void this.applySidePanelSetting();
 
 				this.attachBoundsListener(bw);
@@ -247,6 +252,8 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	onunload() {
+		// Hand throttling back to Electron on the way out.
+		this.applyBackgroundThrottling(true);
 		this.removeDockToggles();
 		this.clearPendingOpen();
 		if (this.trySetupTimer !== null) {
@@ -458,6 +465,25 @@ export default class FloatingNotesPlugin extends Plugin {
 		doc.querySelectorAll(`.${FIRST_BAR_CLASS}`).forEach((el) => el.classList.remove(FIRST_BAR_CLASS));
 	}
 
+	/**
+	 * Electron throttles timers and rendering in a minimized window. Plugin
+	 * code runs in the main window, so anything it renders into the popout
+	 * (Tasks queries, Dataview blocks) stalls while the main window is down.
+	 */
+	applyBackgroundThrottling(forceAllowed = false) {
+		const allowed = forceAllowed || !this.settings.disableBackgroundThrottling;
+		const mainBW = (window as PopoutWindow).electronWindow;
+		for (const bw of [mainBW, this.popoutBW]) {
+			if (!bw) continue;
+			try {
+				if (bw.isDestroyed()) continue;
+				bw.webContents?.setBackgroundThrottling?.(allowed);
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+
 	applyOpacity() {
 		if (!this.popoutBW || this.popoutBW.isDestroyed()) return;
 		if (this.popoutHidden) return;
@@ -495,10 +521,12 @@ export default class FloatingNotesPlugin extends Plugin {
 				void this.saveSettings();
 				new Notice(`Floating Notes: port in use, switched to ${this.settings.port}`);
 				this.startServer();
+		this.applyBackgroundThrottling();
 			} else {
 				this.serverRetryTimer = window.setTimeout(() => {
 					this.serverRetryTimer = null;
 					this.startServer();
+		this.applyBackgroundThrottling();
 				}, 1000);
 			}
 		});
@@ -509,6 +537,7 @@ export default class FloatingNotesPlugin extends Plugin {
 				this.serverRetryTimer = window.setTimeout(() => {
 					this.serverRetryTimer = null;
 					this.startServer();
+		this.applyBackgroundThrottling();
 				}, 1000);
 			}
 		});
@@ -704,6 +733,19 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	private throttlingDesc(): DocumentFragment {
+		const frag = new DocumentFragment();
+		frag.append(
+			"Stop the main window being throttled while it is minimized, so plugin content (Tasks, Dataview) still renders in the popout."
+		);
+		frag.createEl("br");
+		frag.createEl("span", {
+			cls: "mod-warning",
+			text: "Warning: this keeps the main window ticking in the background, so idle CPU and battery use go up slightly.",
+		});
+		return frag;
+	}
+
 	display() {
 		const { containerEl } = this;
 		containerEl.empty();
@@ -791,6 +833,19 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 						this.plugin.settings.showSidePanel = value;
 						await this.plugin.saveSettings();
 						await this.plugin.applySidePanelSetting();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Keep the main window awake")
+			.setDesc(this.throttlingDesc())
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.disableBackgroundThrottling)
+					.onChange(async (value) => {
+						this.plugin.settings.disableBackgroundThrottling = value;
+						await this.plugin.saveSettings();
+						this.plugin.applyBackgroundThrottling();
 					})
 			);
 
