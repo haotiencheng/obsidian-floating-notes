@@ -21,6 +21,7 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 - **Toggle popout** — show / hide a native Obsidian editor window without losing state
 - **Always on top** — popout floats above other apps (optional)
 - **Hide tab bar** — strip the tab bar for a bare capture window (optional)
+- **Side panels** — file explorer (left) and backlinks (right) inside the popout, collapsible from the top-corner buttons (optional)
 - **Auto-launch** — the bundled script starts Obsidian if it isn't running, then toggles
 - **Three capture modes**
   - **Current active note** — opens whatever note you're viewing
@@ -280,6 +281,7 @@ Changed the port in settings? Export it for the script: `FLOATING_NOTES_PORT=512
 | New note folder | Folder for new notes (when mode is "New note every time") | `Inbox` |
 | Always on top | Float popout above other windows | On |
 | Hide tab bar | Hide the popout's tab bar (a 12px strip stays draggable) | Off |
+| Show side panels | File explorer (left) + backlinks (right) panels in the popout | Off |
 | Server port | Local HTTP port for external triggers | `51234` |
 
 ## Notes

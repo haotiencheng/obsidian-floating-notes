@@ -5,6 +5,37 @@ body.floating-notes-no-tabs .workspace-tab-header-container {
 }
 
 /*
+ * With side panels on, the tab strip stays as the home of the collapse
+ * buttons: everything but those is hidden, leaving a thin draggable bar.
+ */
+body.floating-notes-no-tabs.floating-notes-docks .workspace-tab-header-container {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	min-height: 34px;
+	padding: 0 4px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	-webkit-app-region: drag;
+	app-region: drag;
+}
+
+/* Nothing but the collapse buttons: no tabs, no new-tab "+", no tab list. */
+body.floating-notes-no-tabs.floating-notes-docks
+	.workspace-tab-header-container
+	> *:not(.floating-notes-dock-toggle),
+body.floating-notes-no-tabs.floating-notes-docks .workspace-tab-header-container-inner,
+body.floating-notes-no-tabs.floating-notes-docks .workspace-tab-header-new-tab,
+body.floating-notes-no-tabs.floating-notes-docks .workspace-tab-header-tab-list,
+body.floating-notes-no-tabs.floating-notes-docks .workspace-tab-header-spacer {
+	display: none !important;
+}
+
+/* The leftmost strip runs under the macOS traffic lights. */
+body.floating-notes-no-tabs.floating-notes-docks .workspace-tab-header-container.floating-notes-first-bar {
+	padding-left: 78px;
+}
+
+/*
  * Without the tab bar, .view-header becomes the top row: its back/forward
  * buttons end up underneath the macOS traffic lights. Drop them (the popout is
  * a capture window, not a browser) and keep the row clear of the lights.
@@ -14,7 +45,6 @@ body.floating-notes-no-tabs .view-header-nav-buttons {
 }
 
 body.floating-notes-no-tabs .view-header {
-	padding-left: 78px;
 	/* The tab bar used to be the drag handle; the header takes over. */
 	-webkit-app-region: drag;
 	app-region: drag;
@@ -24,4 +54,30 @@ body.floating-notes-no-tabs .view-header button,
 body.floating-notes-no-tabs .view-header .view-header-title-container {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
+}
+
+/* --- Side panel toggles ------------------------------------------------- */
+
+/* Sits inline in the tab bar, or in the view header when tabs are hidden. */
+.floating-notes-dock-toggle {
+	flex: 0 0 auto;
+	align-self: center;
+	margin: 0 4px;
+	color: var(--text-muted);
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}
+
+/* Hidden siblings collapse the strip, so pin the right toggle to the edge. */
+.floating-notes-dock-toggle.mod-right {
+	margin-left: auto;
+}
+
+.floating-notes-dock-toggle.is-collapsed {
+	color: var(--text-faint);
+}
+
+/* Without a tab bar the header is the top row: clear the traffic lights. */
+body.floating-notes-no-tabs .view-header.floating-notes-first-header {
+	padding-left: 78px;
 }
