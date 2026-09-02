@@ -4,6 +4,8 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	WorkspaceLeaf,
+	setIcon,
 	WorkspaceWindow,
 	normalizePath,
 } from "obsidian";
@@ -27,6 +29,11 @@ interface FloatingNotesSettings {
 	bounds: WindowBounds | null;
 	opacity: number;
 	hideTabBar: boolean;
+	showSidePanel: boolean;
+	leftPanelOpen: boolean;
+	rightPanelOpen: boolean;
+	leftPanelWidth: number;
+	rightPanelWidth: number;
 }
 
 const DEFAULT_SETTINGS: FloatingNotesSettings = {
@@ -38,11 +45,44 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	bounds: null,
 	opacity: 1,
 	hideTabBar: false,
+	showSidePanel: false,
+	leftPanelOpen: true,
+	rightPanelOpen: true,
+	leftPanelWidth: 18,
+	rightPanelWidth: 18,
 };
 
 const MIN_OPACITY = 0.2;
 const MAX_OPACITY = 1;
 const HIDE_TAB_BAR_CLASS = "floating-notes-no-tabs";
+// Popout windows have no left/right dock (Workspace owns one of each, bound to
+// the main window), so the docks here are plain leaf splits inside the popout,
+// collapsed and expanded by detaching / recreating the leaf.
+const DOCKS_CLASS = "floating-notes-docks";
+const TOGGLE_CLASS = "floating-notes-dock-toggle";
+const FIRST_HEADER_CLASS = "floating-notes-first-header";
+const FIRST_BAR_CLASS = "floating-notes-first-bar";
+const LEFT_PANEL_VIEW = "file-explorer";
+const RIGHT_PANEL_VIEW = "backlink";
+const MIN_PANEL_PERCENT = 8;
+const MAX_PANEL_PERCENT = 50;
+
+type DockSide = "left" | "right";
+
+/**
+ * Splits size their children with `flex-grow` via the internal setDimension,
+ * which lives on the item that is the direct child of the split (the tabs
+ * container), not on the leaf. Values are shared out of 100.
+ */
+interface SizableItem {
+	containerEl?: HTMLElement;
+	setDimension?(percent: number | null): void;
+}
+
+const DOCKS: Record<DockSide, { view: string; icon: string; label: string }> = {
+	left: { view: LEFT_PANEL_VIEW, icon: "panel-left", label: "Toggle left panel" },
+	right: { view: RIGHT_PANEL_VIEW, icon: "panel-right", label: "Toggle right panel" },
+};
 
 interface ElectronBrowserWindow {
 	isDestroyed(): boolean;
@@ -108,6 +148,18 @@ export default class FloatingNotesPlugin extends Plugin {
 			})
 		);
 
+		this.registerEvent(
+			this.app.workspace.on("resize", () => {
+				if (this.captureWindow) this.savePanelWidths();
+			})
+		);
+
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				if (this.captureWindow) this.renderDockToggles();
+			})
+		);
+
 		this.addSettingTab(new FloatingNotesSettingTab(this.app, this));
 
 		// Obsidian restores popout windows from the saved layout on startup, before
@@ -169,10 +221,15 @@ export default class FloatingNotesPlugin extends Plugin {
 				bw.setIgnoreMouseEvents(false);
 
 				this.applyTabBarSetting();
+				void this.applySidePanelSetting();
 
 				this.attachBoundsListener(bw);
 
 				if (opts.focus) bw.focus();
+
+				this.registerDomEvent(win.win.document, "mouseup", () => {
+					this.savePanelWidths();
+				});
 
 				this.registerDomEvent(win.win.document, "keydown", (e: KeyboardEvent) => {
 					if (e.key !== "Escape") return;
@@ -190,6 +247,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	onunload() {
+		this.removeDockToggles();
 		this.clearPendingOpen();
 		if (this.trySetupTimer !== null) {
 			window.clearTimeout(this.trySetupTimer);
@@ -221,6 +279,183 @@ export default class FloatingNotesPlugin extends Plugin {
 		const body = this.captureWindow?.win.document.body;
 		if (!body) return;
 		body.classList.toggle(HIDE_TAB_BAR_CLASS, this.settings.hideTabBar);
+		this.renderDockToggles();
+	}
+
+	private popoutLeaves(): WorkspaceLeaf[] {
+		const win = this.captureWindow;
+		const leaves: WorkspaceLeaf[] = [];
+		if (!win) return leaves;
+		this.app.workspace.iterateAllLeaves((leaf) => {
+			if (leaf.getContainer() === win) leaves.push(leaf);
+		});
+		return leaves;
+	}
+
+	private panelLeaf(side: DockSide): WorkspaceLeaf | null {
+		return this.popoutLeaves().find((l) => l.view.getViewType() === DOCKS[side].view) ?? null;
+	}
+
+	private hostLeaf(): WorkspaceLeaf | null {
+		const panelViews = [DOCKS.left.view, DOCKS.right.view];
+		return this.popoutLeaves().find((l) => !panelViews.includes(l.view.getViewType())) ?? null;
+	}
+
+	private isOpen(side: DockSide): boolean {
+		return side === "left" ? this.settings.leftPanelOpen : this.settings.rightPanelOpen;
+	}
+
+	private panelWidth(side: DockSide): number {
+		const v = side === "left" ? this.settings.leftPanelWidth : this.settings.rightPanelWidth;
+		if (!Number.isFinite(v)) return DEFAULT_SETTINGS.leftPanelWidth;
+		return Math.min(MAX_PANEL_PERCENT, Math.max(MIN_PANEL_PERCENT, v));
+	}
+
+	/** Panels are recreated on expand, so their dragged width has to be stored. */
+	private savePanelWidths() {
+		const root = this.captureWindow?.win.document.querySelector(".workspace-split.mod-root") as HTMLElement | null;
+		if (!root || !root.offsetWidth) return;
+		let changed = false;
+		for (const side of ["left", "right"] as DockSide[]) {
+			const leaf = this.panelLeaf(side);
+			const el = (leaf?.parent as unknown as SizableItem | undefined)?.containerEl ?? null;
+			if (!el || !el.offsetWidth) continue;
+			const pct = Math.round((el.offsetWidth / root.offsetWidth) * 1000) / 10;
+			if (pct < MIN_PANEL_PERCENT || pct > MAX_PANEL_PERCENT) continue;
+			if (side === "left") {
+				if (this.settings.leftPanelWidth === pct) continue;
+				this.settings.leftPanelWidth = pct;
+			} else {
+				if (this.settings.rightPanelWidth === pct) continue;
+				this.settings.rightPanelWidth = pct;
+			}
+			changed = true;
+		}
+		if (changed) void this.saveSettings();
+	}
+
+	private setOpen(side: DockSide, open: boolean) {
+		if (side === "left") this.settings.leftPanelOpen = open;
+		else this.settings.rightPanelOpen = open;
+	}
+
+	/** Reconciles both docks and the toggle buttons with the current settings. */
+	async applySidePanelSetting() {
+		const doc = this.captureWindow?.win.document;
+		if (!doc) return;
+		doc.body.classList.toggle(DOCKS_CLASS, this.settings.showSidePanel);
+
+		for (const side of ["left", "right"] as DockSide[]) {
+			const existing = this.panelLeaf(side);
+			const wanted = this.settings.showSidePanel && this.isOpen(side);
+			if (wanted && !existing) await this.openPanel(side);
+			else if (!wanted && existing) {
+				this.savePanelWidths();
+				existing.detach();
+			}
+		}
+
+		this.renderDockToggles();
+	}
+
+	async toggleDock(side: DockSide) {
+		this.setOpen(side, !this.isOpen(side));
+		await this.saveSettings();
+		await this.applySidePanelSetting();
+	}
+
+	private async openPanel(side: DockSide) {
+		const host = this.hostLeaf();
+		if (!host) return;
+		const leaf = this.app.workspace.createLeafBySplit(host, "vertical", side === "left");
+		await leaf.setViewState({ type: DOCKS[side].view });
+		this.applyPanelWidths();
+		this.app.workspace.setActiveLeaf(host, { focus: true });
+	}
+
+	private applyPanelWidths() {
+		const host = this.hostLeaf();
+		if (!host) return;
+		const hostTabs = host.parent as unknown as SizableItem | undefined;
+		const split = (host.parent as unknown as { parent?: { children?: SizableItem[] } })?.parent;
+		const children = split?.children;
+		if (!children || !hostTabs) return;
+
+		const tabsFor = (side: DockSide) => this.panelLeaf(side)?.parent as unknown as SizableItem | undefined;
+		const left = tabsFor("left");
+		const right = tabsFor("right");
+		const leftPct = left ? this.panelWidth("left") : 0;
+		const rightPct = right ? this.panelWidth("right") : 0;
+		const hostPct = Math.max(MIN_PANEL_PERCENT, 100 - leftPct - rightPct);
+
+		for (const child of children) {
+			const pct = child === left ? leftPct : child === right ? rightPct : hostPct;
+			try {
+				child.setDimension?.(pct);
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+
+	/**
+	 * The toggles mount in the tab header container of the outermost columns.
+	 * With "Hide tab bar" on that container is emptied down to a thin drag
+	 * strip (see styles.css) rather than removed, so the mount point is the
+	 * same in both states.
+	 */
+	private renderDockToggles() {
+		const doc = this.captureWindow?.win.document;
+		if (!doc) return;
+		this.removeDockToggles();
+		this.markFirstHeader();
+		if (!this.settings.showSidePanel) return;
+
+		for (const side of ["left", "right"] as DockSide[]) {
+			const leaf = this.panelLeaf(side) ?? this.hostLeaf();
+			if (!leaf) continue;
+			const bar = leaf.view.containerEl
+				.closest(".workspace-tabs")
+				?.querySelector(".workspace-tab-header-container");
+			if (!bar) continue;
+
+			// Plain DOM here: the element belongs to the popout document.
+			const btn = doc.createElement("button");
+			btn.className = `${TOGGLE_CLASS} clickable-icon mod-${side}`;
+			btn.setAttribute("aria-label", DOCKS[side].label);
+			btn.classList.toggle("is-collapsed", !this.isOpen(side));
+			setIcon(btn, DOCKS[side].icon);
+			this.registerDomEvent(btn, "click", () => {
+				void this.toggleDock(side);
+			});
+
+			if (side === "left") {
+				bar.classList.add(FIRST_BAR_CLASS);
+				bar.prepend(btn);
+			}
+			else bar.appendChild(btn);
+		}
+	}
+
+	/**
+	 * With the tab bar hidden the view header becomes the top row, so only the
+	 * leftmost column has to clear the macOS traffic lights.
+	 */
+	private markFirstHeader() {
+		const doc = this.captureWindow?.win.document;
+		if (!doc) return;
+		doc.querySelectorAll(`.${FIRST_HEADER_CLASS}`).forEach((el) => el.classList.remove(FIRST_HEADER_CLASS));
+		// With panels on, the drag strip sits above the headers instead.
+		if (this.settings.showSidePanel) return;
+		const leaf = this.panelLeaf("left") ?? this.hostLeaf();
+		leaf?.view.containerEl.querySelector(".view-header")?.classList.add(FIRST_HEADER_CLASS);
+	}
+
+	private removeDockToggles() {
+		const doc = this.captureWindow?.win.document;
+		if (!doc) return;
+		doc.querySelectorAll(`.${TOGGLE_CLASS}`).forEach((el) => el.remove());
+		doc.querySelectorAll(`.${FIRST_BAR_CLASS}`).forEach((el) => el.classList.remove(FIRST_BAR_CLASS));
 	}
 
 	applyOpacity() {
@@ -319,6 +554,7 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	private resetState() {
 		this.detachBoundsListener();
+		this.removeDockToggles();
 		this.captureWindow = null;
 		this.popoutBW = null;
 		this.popoutHidden = false;
@@ -455,6 +691,8 @@ export default class FloatingNotesPlugin extends Plugin {
 			const file = await this.app.vault.create(normalizePath(`${folder}/${title}.md`), "");
 			await leaf.openFile(file);
 		}
+
+		await this.applySidePanelSetting();
 	}
 }
 
@@ -539,6 +777,20 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 						this.plugin.settings.hideTabBar = value;
 						await this.plugin.saveSettings();
 						this.plugin.applyTabBarSetting();
+						await this.plugin.applySidePanelSetting();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Show side panels")
+			.setDesc("Add file explorer (left) and backlinks (right) panels to the popout, with toggle buttons in its top corners.")
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.showSidePanel)
+					.onChange(async (value) => {
+						this.plugin.settings.showSidePanel = value;
+						await this.plugin.saveSettings();
+						await this.plugin.applySidePanelSetting();
 					})
 			);
 
