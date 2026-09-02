@@ -47,7 +47,7 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	opacity: 1,
 	hideTabBar: false,
 	showSidePanel: false,
-	disableBackgroundThrottling: true,
+	disableBackgroundThrottling: false,
 	leftPanelOpen: true,
 	rightPanelOpen: true,
 	leftPanelWidth: 18,
