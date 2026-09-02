@@ -22,6 +22,7 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 - **Always on top** — popout floats above other apps (optional)
 - **Hide tab bar** — strip the tab bar for a bare capture window (optional)
 - **Side panels** — file explorer (left) and backlinks (right) inside the popout, collapsible from the top-corner buttons (optional)
+- **Keep the main window awake** — render plugin content (Tasks, Dataview) in the popout while the main window is minimized (optional)
 - **Auto-launch** — the bundled script starts Obsidian if it isn't running, then toggles
 - **Three capture modes**
   - **Current active note** — opens whatever note you're viewing
@@ -282,6 +283,7 @@ Changed the port in settings? Export it for the script: `FLOATING_NOTES_PORT=512
 | Always on top | Float popout above other windows | On |
 | Hide tab bar | Hide the popout's tab bar (a 12px strip stays draggable) | Off |
 | Show side panels | File explorer (left) + backlinks (right) panels in the popout | Off |
+| Keep the main window awake | Stop Electron throttling the minimized main window, so plugin content still renders in the popout | On |
 | Server port | Local HTTP port for external triggers | `51234` |
 
 ## Notes
