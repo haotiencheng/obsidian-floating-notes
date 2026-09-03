@@ -21,7 +21,7 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 - **Toggle popout** — show / hide a native Obsidian editor window without losing state
 - **Always on top** — popout floats above other apps (optional)
 - **Hide tab bar** — strip the tab bar for a bare capture window (optional)
-- **Side panels** — file explorer (left) and backlinks (right) inside the popout, collapsible from the top-corner buttons (optional)
+- **Side panels** — two collapsible panels inside the popout, each running any installed view (file explorer, backlinks, a plugin's own sidebar view)
 - **Keep the main window awake** — render plugin content (Tasks, Dataview) in the popout while the main window is minimized (optional)
 - **Auto-launch** — the bundled script starts Obsidian if it isn't running, then toggles
 - **Three capture modes**
@@ -282,7 +282,8 @@ Changed the port in settings? Export it for the script: `FLOATING_NOTES_PORT=512
 | New note folder | Folder for new notes (when mode is "New note every time") | `Inbox` |
 | Always on top | Float popout above other windows | On |
 | Hide tab bar | Hide the popout's tab bar (a 12px strip stays draggable) | Off |
-| Show side panels | File explorer (left) + backlinks (right) panels in the popout | Off |
+| Show side panels | Collapsible panels on either side of the note in the popout | Off |
+| Left / right panel view | Which view runs in each panel, from any installed view | File explorer / Backlink |
 | Keep the main window awake | Stop Electron throttling the minimized main window, so plugin content still renders in the popout | Off |
 | Server port | Local HTTP port for external triggers | `51234` |
 
