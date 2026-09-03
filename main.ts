@@ -20,6 +20,9 @@ interface WindowBounds {
 	height: number;
 }
 
+const LEFT_PANEL_VIEW = "file-explorer";
+const RIGHT_PANEL_VIEW = "backlink";
+
 interface FloatingNotesSettings {
 	mode: CaptureMode;
 	fixedNotePath: string;
@@ -35,6 +38,8 @@ interface FloatingNotesSettings {
 	rightPanelOpen: boolean;
 	leftPanelWidth: number;
 	rightPanelWidth: number;
+	leftPanelView: string;
+	rightPanelView: string;
 }
 
 const DEFAULT_SETTINGS: FloatingNotesSettings = {
@@ -52,6 +57,8 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	rightPanelOpen: true,
 	leftPanelWidth: 18,
 	rightPanelWidth: 18,
+	leftPanelView: LEFT_PANEL_VIEW,
+	rightPanelView: RIGHT_PANEL_VIEW,
 };
 
 const MIN_OPACITY = 0.2;
@@ -64,8 +71,19 @@ const DOCKS_CLASS = "floating-notes-docks";
 const TOGGLE_CLASS = "floating-notes-dock-toggle";
 const FIRST_HEADER_CLASS = "floating-notes-first-header";
 const FIRST_BAR_CLASS = "floating-notes-first-bar";
-const LEFT_PANEL_VIEW = "file-explorer";
-const RIGHT_PANEL_VIEW = "backlink";
+// Views that own a file (or nothing) make no sense as a panel, and picking one
+// would confuse the note leaf for a panel.
+const NON_PANEL_VIEWS = new Set([
+	"markdown",
+	"empty",
+	"canvas",
+	"pdf",
+	"image",
+	"audio",
+	"video",
+	"unsupported",
+	"release-notes",
+]);
 const MIN_PANEL_PERCENT = 8;
 const MAX_PANEL_PERCENT = 50;
 
@@ -81,9 +99,9 @@ interface SizableItem {
 	setDimension?(percent: number | null): void;
 }
 
-const DOCKS: Record<DockSide, { view: string; icon: string; label: string }> = {
-	left: { view: LEFT_PANEL_VIEW, icon: "panel-left", label: "Toggle left panel" },
-	right: { view: RIGHT_PANEL_VIEW, icon: "panel-right", label: "Toggle right panel" },
+const DOCKS: Record<DockSide, { icon: string; label: string }> = {
+	left: { icon: "panel-left", label: "Toggle left panel" },
+	right: { icon: "panel-right", label: "Toggle right panel" },
 };
 
 interface ElectronBrowserWindow {
@@ -299,13 +317,30 @@ export default class FloatingNotesPlugin extends Plugin {
 		return leaves;
 	}
 
+	panelView(side: DockSide): string {
+		const type = side === "left" ? this.settings.leftPanelView : this.settings.rightPanelView;
+		return type || (side === "left" ? LEFT_PANEL_VIEW : RIGHT_PANEL_VIEW);
+	}
+
 	private panelLeaf(side: DockSide): WorkspaceLeaf | null {
-		return this.popoutLeaves().find((l) => l.view.getViewType() === DOCKS[side].view) ?? null;
+		const matches = this.popoutLeaves().filter((l) => l.view.getViewType() === this.panelView(side));
+		if (matches.length === 0) return null;
+		if (this.panelView("left") !== this.panelView("right")) return matches[0];
+		// Both sides run the same view: tell them apart by position.
+		const sorted = matches.sort(
+			(a, b) => a.view.containerEl.getBoundingClientRect().left - b.view.containerEl.getBoundingClientRect().left
+		);
+		return side === "left" ? sorted[0] : sorted[sorted.length - 1];
 	}
 
 	private hostLeaf(): WorkspaceLeaf | null {
-		const panelViews = [DOCKS.left.view, DOCKS.right.view];
-		return this.popoutLeaves().find((l) => !panelViews.includes(l.view.getViewType())) ?? null;
+		const leaves = this.popoutLeaves();
+		const panelViews = [this.panelView("left"), this.panelView("right")];
+		return (
+			leaves.find((l) => NON_PANEL_VIEWS.has(l.view.getViewType())) ??
+			leaves.find((l) => !panelViews.includes(l.view.getViewType())) ??
+			null
+		);
 	}
 
 	private isOpen(side: DockSide): boolean {
@@ -352,6 +387,14 @@ export default class FloatingNotesPlugin extends Plugin {
 		if (!doc) return;
 		doc.body.classList.toggle(DOCKS_CLASS, this.settings.showSidePanel);
 
+		// Drop panels left behind by a changed view setting.
+		const host = this.hostLeaf();
+		const wantedViews = [this.panelView("left"), this.panelView("right")];
+		for (const leaf of this.popoutLeaves()) {
+			if (leaf === host) continue;
+			if (!this.settings.showSidePanel || !wantedViews.includes(leaf.view.getViewType())) leaf.detach();
+		}
+
 		for (const side of ["left", "right"] as DockSide[]) {
 			const existing = this.panelLeaf(side);
 			const wanted = this.settings.showSidePanel && this.isOpen(side);
@@ -362,6 +405,9 @@ export default class FloatingNotesPlugin extends Plugin {
 			}
 		}
 
+		// Detaching hands the freed space to the sibling split, so resize the
+		// remaining columns back to the note leaf.
+		this.applyPanelWidths();
 		this.renderDockToggles();
 	}
 
@@ -375,7 +421,7 @@ export default class FloatingNotesPlugin extends Plugin {
 		const host = this.hostLeaf();
 		if (!host) return;
 		const leaf = this.app.workspace.createLeafBySplit(host, "vertical", side === "left");
-		await leaf.setViewState({ type: DOCKS[side].view });
+		await leaf.setViewState({ type: this.panelView(side) });
 		this.applyPanelWidths();
 		this.app.workspace.setActiveLeaf(host, { focus: true });
 	}
@@ -733,6 +779,39 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	/** Every registered view, minus the ones that hold a file. */
+	private panelViewOptions(): Record<string, string> {
+		const registry = (this.app as unknown as { viewRegistry?: { viewByType?: Record<string, unknown> } })
+			.viewRegistry?.viewByType;
+		const types = Object.keys(registry ?? {}).filter((t) => !NON_PANEL_VIEWS.has(t));
+		for (const fallback of [LEFT_PANEL_VIEW, RIGHT_PANEL_VIEW]) {
+			if (!types.includes(fallback)) types.push(fallback);
+		}
+		const options: Record<string, string> = {};
+		for (const type of types.sort()) {
+			options[type] = type.replace(/[-_]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+		}
+		return options;
+	}
+
+	private addPanelViewSetting(containerEl: HTMLElement, side: DockSide) {
+		const name = side === "left" ? "Left panel view" : "Right panel view";
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(`Which view runs in the ${side} panel. Any installed view works, including other plugins'.`)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions(this.panelViewOptions())
+					.setValue(this.plugin.panelView(side))
+					.onChange(async (value) => {
+						if (side === "left") this.plugin.settings.leftPanelView = value;
+						else this.plugin.settings.rightPanelView = value;
+						await this.plugin.saveSettings();
+						await this.plugin.applySidePanelSetting();
+					})
+			);
+	}
+
 	private throttlingDesc(): DocumentFragment {
 		const frag = new DocumentFragment();
 		frag.append(
@@ -833,8 +912,14 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 						this.plugin.settings.showSidePanel = value;
 						await this.plugin.saveSettings();
 						await this.plugin.applySidePanelSetting();
+						this.display();
 					})
 			);
+
+		if (this.plugin.settings.showSidePanel) {
+			this.addPanelViewSetting(containerEl, "left");
+			this.addPanelViewSetting(containerEl, "right");
+		}
 
 		new Setting(containerEl)
 			.setName("Keep the main window awake")
