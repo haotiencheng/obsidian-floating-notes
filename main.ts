@@ -614,8 +614,32 @@ export default class FloatingNotesPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Closes modals, menus, and suggestion popups open inside the popout.
+	 * Hiding only drops opacity, so anything left open would stay attached to
+	 * an invisible window and block the same UI in every other window (#3).
+	 */
+	private dismissPopoutOverlays() {
+		const doc = this.captureWindow?.win?.document;
+		if (!doc) return;
+		// Modals close on backdrop click. SuggestModal (command palette, quick
+		// switcher) has a backdrop but no close button, so prefer the backdrop.
+		for (const container of Array.from(doc.querySelectorAll<HTMLElement>(".modal-container"))) {
+			const target =
+				container.querySelector<HTMLElement>(".modal-bg") ??
+				container.querySelector<HTMLElement>(".modal-close-button");
+			target?.click();
+		}
+		if (doc.querySelector(".menu, .suggestion-container")) {
+			doc.body.dispatchEvent(
+				new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true })
+			);
+		}
+	}
+
 	private hidePopout() {
 		if (this.popoutBW && !this.popoutBW.isDestroyed() && !this.popoutHidden) {
+			this.dismissPopoutOverlays();
 			this.popoutBW.setOpacity(0);
 			this.popoutBW.setIgnoreMouseEvents(true);
 			this.popoutBW.setSkipTaskbar(true);
