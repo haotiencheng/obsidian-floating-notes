@@ -28,6 +28,7 @@ interface FloatingNotesSettings {
 	fixedNotePath: string;
 	newNoteFolder: string;
 	alwaysOnTop: boolean;
+	visibleOnAllSpaces: boolean;
 	port: number;
 	bounds: WindowBounds | null;
 	opacity: number;
@@ -47,6 +48,7 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	fixedNotePath: "Inbox.md",
 	newNoteFolder: "Inbox",
 	alwaysOnTop: true,
+	visibleOnAllSpaces: true,
 	port: 51234,
 	bounds: null,
 	opacity: 1,
@@ -108,6 +110,10 @@ interface ElectronBrowserWindow {
 	isDestroyed(): boolean;
 	setSkipTaskbar(skip: boolean): void;
 	setAlwaysOnTop(flag: boolean, level?: string): void;
+	setVisibleOnAllWorkspaces(
+		visible: boolean,
+		options?: { visibleOnFullScreen?: boolean; skipTransformProcessType?: boolean }
+	): void;
 	setOpacity(opacity: number): void;
 	setIgnoreMouseEvents(ignore: boolean): void;
 	focus(): void;
@@ -233,6 +239,13 @@ export default class FloatingNotesPlugin extends Plugin {
 
 				if (this.settings.alwaysOnTop) {
 					bw.setAlwaysOnTop(true, "floating");
+				}
+
+				if (this.settings.visibleOnAllSpaces) {
+					bw.setVisibleOnAllWorkspaces(true, {
+						visibleOnFullScreen: true,
+						skipTransformProcessType: true,
+					});
 				}
 
 				if (opts.restoreBounds && this.settings.bounds) {
@@ -884,6 +897,20 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.alwaysOnTop)
 					.onChange(async (value) => {
 						this.plugin.settings.alwaysOnTop = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Show on all spaces")
+			.setDesc(
+				"Keep the popout visible after switching macOS spaces, including over full-screen apps. Has no effect on Windows."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.visibleOnAllSpaces)
+					.onChange(async (value) => {
+						this.plugin.settings.visibleOnAllSpaces = value;
 						await this.plugin.saveSettings();
 					})
 			);
