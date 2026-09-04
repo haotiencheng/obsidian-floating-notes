@@ -5,13 +5,15 @@ import {
 	PluginSettingTab,
 	Setting,
 	WorkspaceLeaf,
+	View,
 	setIcon,
 	WorkspaceWindow,
 	normalizePath,
 } from "obsidian";
 import * as http from "http";
+import { execFile } from "child_process";
 
-type CaptureMode = "active" | "fixed" | "new" | "daily";
+type CaptureMode = "active" | "fixed" | "new" | "daily" | "view";
 
 interface WindowBounds {
 	x: number;
@@ -27,6 +29,8 @@ interface FloatingNotesSettings {
 	mode: CaptureMode;
 	fixedNotePath: string;
 	newNoteFolder: string;
+	captureView: string;
+	reapplyOnShow: boolean;
 	alwaysOnTop: boolean;
 	visibleOnAllSpaces: boolean;
 	port: number;
@@ -47,6 +51,8 @@ const DEFAULT_SETTINGS: FloatingNotesSettings = {
 	mode: "active",
 	fixedNotePath: "Inbox.md",
 	newNoteFolder: "Inbox",
+	captureView: "",
+	reapplyOnShow: false,
 	alwaysOnTop: true,
 	visibleOnAllSpaces: true,
 	port: 51234,
@@ -86,6 +92,9 @@ const NON_PANEL_VIEWS = new Set([
 	"unsupported",
 	"release-notes",
 ]);
+/** Obsidian appends modals, suggestion popups, and menus directly to body. */
+const OVERLAY_SELECTOR = ".modal-container, .suggestion-container, .menu";
+const OPEN_OVERLAY_SELECTOR = "body > .modal-container, body > .suggestion-container, body > .menu";
 const MIN_PANEL_PERCENT = 8;
 const MAX_PANEL_PERCENT = 50;
 
@@ -117,11 +126,34 @@ interface ElectronBrowserWindow {
 	setOpacity(opacity: number): void;
 	setIgnoreMouseEvents(ignore: boolean): void;
 	focus(): void;
+	blur(): void;
+	isFocused(): boolean;
+	setFocusable(focusable: boolean): void;
 	getBounds(): WindowBounds;
 	setBounds(bounds: Partial<WindowBounds>): void;
 	webContents?: { setBackgroundThrottling?(allowed: boolean): void };
 	on(event: "resize" | "move" | "moved", listener: () => void): void;
 	off(event: "resize" | "move" | "moved", listener: () => void): void;
+}
+
+const OBSIDIAN_BUNDLE_ID = "md.obsidian";
+
+/** Bundle id of the frontmost macOS app, or null elsewhere / on failure. */
+function frontmostAppBundleId(): Promise<string | null> {
+	if (process.platform !== "darwin") return Promise.resolve(null);
+	return new Promise((resolve) => {
+		execFile("lsappinfo", ["front"], (err, asn) => {
+			if (err || !asn.trim()) return resolve(null);
+			execFile("lsappinfo", ["info", "-only", "bundleid", asn.trim()], (err2, out) => {
+				const m = err2 ? null : out.match(/"CFBundleIdentifier"="([^"]+)"/);
+				resolve(m ? m[1] : null);
+			});
+		});
+	});
+}
+
+function activateApp(bundleId: string) {
+	execFile("open", ["-b", bundleId], () => {});
 }
 
 interface PopoutWindow extends Window {
@@ -131,7 +163,12 @@ interface PopoutWindow extends Window {
 export default class FloatingNotesPlugin extends Plugin {
 	settings: FloatingNotesSettings;
 	private captureWindow: WorkspaceWindow | null = null;
+	/** The leaf holding the captured note or view. Panels split off this one. */
+	private contentLeaf: WorkspaceLeaf | null = null;
 	private popoutBW: ElectronBrowserWindow | null = null;
+	private focusReleaseTimer: number | null = null;
+	/** App that was in front before the popout took focus, to return to on hide. */
+	private previousApp: string | null = null;
 	private popoutHidden = false;
 	private pendingOpen = false;
 	private server: http.Server | null = null;
@@ -267,14 +304,9 @@ export default class FloatingNotesPlugin extends Plugin {
 					this.savePanelWidths();
 				});
 
-				this.registerDomEvent(win.win.document, "keydown", (e: KeyboardEvent) => {
-					if (e.key !== "Escape") return;
-					const doc = win.win.document;
-					const hasModal = doc.querySelector(".modal-container, .suggestion-container, .menu");
-					if (hasModal) return;
-					e.preventDefault();
-					this.hidePopout();
-				});
+				this.installEscapeToHide(win.win);
+				this.markContentViewAsNavigation();
+
 			} catch {
 				this.trySetupTimer = window.setTimeout(trySetup, 200);
 			}
@@ -283,6 +315,11 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	onunload() {
+		// A hidden popout is only transparent and unfocusable at the Electron
+		// level. Left that way after unload it would linger as an invisible
+		// always-on-top window that nothing can reach. Make it visible again.
+		if (this.popoutHidden) this.showPopout();
+		this.clearFocusReleaseTimer();
 		// Hand throttling back to Electron on the way out.
 		this.applyBackgroundThrottling(true);
 		this.removeDockToggles();
@@ -330,13 +367,27 @@ export default class FloatingNotesPlugin extends Plugin {
 		return leaves;
 	}
 
+	/** All view types currently registered, keyed by type. Excludes file-holding views. */
+	registeredViewTypes(): string[] {
+		const registry = (this.app as unknown as { viewRegistry?: { viewByType?: Record<string, unknown> } })
+			.viewRegistry?.viewByType;
+		return Object.keys(registry ?? {}).filter((t) => !NON_PANEL_VIEWS.has(t));
+	}
+
+	isViewRegistered(type: string): boolean {
+		return this.registeredViewTypes().includes(type);
+	}
+
 	panelView(side: DockSide): string {
 		const type = side === "left" ? this.settings.leftPanelView : this.settings.rightPanelView;
 		return type || (side === "left" ? LEFT_PANEL_VIEW : RIGHT_PANEL_VIEW);
 	}
 
 	private panelLeaf(side: DockSide): WorkspaceLeaf | null {
-		const matches = this.popoutLeaves().filter((l) => l.view.getViewType() === this.panelView(side));
+		const host = this.hostLeaf();
+		const matches = this.popoutLeaves().filter(
+			(l) => l !== host && l.view.getViewType() === this.panelView(side)
+		);
 		if (matches.length === 0) return null;
 		if (this.panelView("left") !== this.panelView("right")) return matches[0];
 		// Both sides run the same view: tell them apart by position.
@@ -348,12 +399,33 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	private hostLeaf(): WorkspaceLeaf | null {
 		const leaves = this.popoutLeaves();
+		if (this.contentLeaf && leaves.includes(this.contentLeaf)) return this.contentLeaf;
+
+		// No remembered leaf (popout restored from a saved layout): infer it.
 		const panelViews = [this.panelView("left"), this.panelView("right")];
-		return (
+		const guess =
 			leaves.find((l) => NON_PANEL_VIEWS.has(l.view.getViewType())) ??
 			leaves.find((l) => !panelViews.includes(l.view.getViewType())) ??
-			null
-		);
+			this.hostLeafByPosition(leaves) ??
+			null;
+		if (guess) this.contentLeaf = guess;
+		return guess;
+	}
+
+	/**
+	 * When the capture view is also a panel view, every leaf shares a type.
+	 * The content leaf is then the one not sitting at a panel's edge.
+	 */
+	private hostLeafByPosition(leaves: WorkspaceLeaf[]): WorkspaceLeaf | null {
+		if (this.settings.mode !== "view") return null;
+		const candidates = leaves
+			.filter((l) => l.view.getViewType() === this.settings.captureView)
+			.sort((a, b) => a.view.containerEl.getBoundingClientRect().left - b.view.containerEl.getBoundingClientRect().left);
+		if (candidates.length === 0) return null;
+		if (candidates.length === 1) return candidates[0];
+		if (this.panelView("left") === this.settings.captureView) candidates.shift();
+		if (this.panelView("right") === this.settings.captureView) candidates.pop();
+		return candidates[0] ?? null;
 	}
 
 	private isOpen(side: DockSide): boolean {
@@ -615,6 +687,57 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	/**
+	 * Obsidian re-dispatches every popout key event on the main window, where
+	 * a Workspace keydown listener reacts to Escape when the active view is
+	 * not a navigation view (Outline, Journal View, any plugin view) by
+	 * jumping to the most recently active navigation leaf in any window.
+	 * From the popout that focuses and raises the main window. That listener
+	 * is registered before any plugin loads and runs before anything we can
+	 * attach, but it returns early when the view reports navigation = true,
+	 * so the popout's content view is marked as such.
+	 */
+	private markContentViewAsNavigation() {
+		const view = this.hostLeaf()?.view as (View & { navigation: boolean }) | undefined;
+		if (view && !view.navigation) view.navigation = true;
+	}
+
+	private overlayObserver: MutationObserver | null = null;
+
+	/**
+	 * Escape hides the popout, unless the same keypress was consumed by an
+	 * overlay. Obsidian's keymap runs first and removes a closed modal from
+	 * the DOM synchronously, so a plain DOM check would miss it; the observer's
+	 * pending records and the event's composed path both still show it.
+	 */
+	private maybeHideOnEscape(e: KeyboardEvent, doc: Document) {
+		if (this.popoutHidden) return;
+		const isOverlay = (node: EventTarget | Node) =>
+			(node as Node).nodeType === Node.ELEMENT_NODE && (node as Element).matches(OVERLAY_SELECTOR);
+		const fromOverlay = e.composedPath().some(isOverlay);
+		const justRemoved = (this.overlayObserver?.takeRecords() ?? []).some((r) =>
+			Array.from(r.removedNodes).some(isOverlay)
+		);
+		if (fromOverlay || justRemoved || doc.querySelector(OPEN_OVERLAY_SELECTOR)) return;
+		this.hidePopout();
+	}
+
+	/** Popout-side fallback for Escape, in case the event is not re-dispatched. */
+	private installEscapeToHide(win: Window) {
+		const doc = win.document;
+		const g = win as Window & typeof globalThis;
+		this.overlayObserver?.disconnect();
+		const observer = new g.MutationObserver(() => {});
+		observer.observe(doc.body, { childList: true });
+		this.overlayObserver = observer;
+		this.register(() => observer.disconnect());
+
+		this.registerDomEvent(doc, "keydown", (e: KeyboardEvent) => {
+			if (e.key !== "Escape") return;
+			this.maybeHideOnEscape(e, doc);
+		});
+	}
+
+	/**
 	 * Closes modals, menus, and suggestion popups open inside the popout.
 	 * Hiding only drops opacity, so anything left open would stay attached to
 	 * an invisible window and block the same UI in every other window (#3).
@@ -624,13 +747,13 @@ export default class FloatingNotesPlugin extends Plugin {
 		if (!doc) return;
 		// Modals close on backdrop click. SuggestModal (command palette, quick
 		// switcher) has a backdrop but no close button, so prefer the backdrop.
-		for (const container of Array.from(doc.querySelectorAll<HTMLElement>(".modal-container"))) {
+		for (const container of Array.from(doc.querySelectorAll<HTMLElement>("body > .modal-container"))) {
 			const target =
 				container.querySelector<HTMLElement>(".modal-bg") ??
 				container.querySelector<HTMLElement>(".modal-close-button");
 			target?.click();
 		}
-		if (doc.querySelector(".menu, .suggestion-container")) {
+		if (doc.querySelector("body > .menu, body > .suggestion-container")) {
 			doc.body.dispatchEvent(
 				new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true })
 			);
@@ -644,11 +767,59 @@ export default class FloatingNotesPlugin extends Plugin {
 			this.popoutBW.setIgnoreMouseEvents(true);
 			this.popoutBW.setSkipTaskbar(true);
 			this.popoutHidden = true;
+			// An invisible window must not keep keyboard focus, or the next
+			// shortcut (e.g. the command palette) lands inside it. Making it
+			// unfocusable drops key status. Defer it past the keyup of the
+			// key that triggered the hide: a key event arriving while the app
+			// has no key window makes AppKit pick the main window and raise
+			// it over whatever the user was using. blur() and focusing the
+			// main window raise it too, so neither is used.
+			const bw = this.popoutBW;
+			// Once the popout stops being the key window, AppKit makes the
+			// main window key and raises it over whatever the user was using.
+			// Hand the foreground back to the app they came from first.
+			let focused = false;
+			try {
+				focused = bw.isFocused();
+			} catch {
+				focused = true;
+			}
+			if (focused) {
+				if (this.previousApp && this.previousApp !== OBSIDIAN_BUNDLE_ID) {
+					activateApp(this.previousApp);
+				} else {
+					// The user came from Obsidian itself: give the main window
+					// focus so the next shortcut does not land in the hidden popout.
+					const mainBW = (window as PopoutWindow).electronWindow;
+					if (mainBW && !mainBW.isDestroyed()) mainBW.focus();
+				}
+			}
+			this.previousApp = null;
+			this.clearFocusReleaseTimer();
+			this.focusReleaseTimer = window.setTimeout(() => {
+				this.focusReleaseTimer = null;
+				if (this.popoutHidden && !bw.isDestroyed()) bw.setFocusable(false);
+			}, 300);
+		}
+	}
+
+	/** Snapshot the frontmost app so hiding can return focus to it. */
+	private async rememberPreviousApp() {
+		this.previousApp = await frontmostAppBundleId();
+	}
+
+	private clearFocusReleaseTimer() {
+		if (this.focusReleaseTimer !== null) {
+			window.clearTimeout(this.focusReleaseTimer);
+			this.focusReleaseTimer = null;
 		}
 	}
 
 	private showPopout() {
 		if (!this.popoutBW || this.popoutBW.isDestroyed()) return;
+		void this.rememberPreviousApp();
+		this.clearFocusReleaseTimer();
+		this.popoutBW.setFocusable(true);
 		this.popoutBW.setOpacity(this.clampedOpacity());
 		this.popoutBW.setIgnoreMouseEvents(false);
 		this.popoutBW.setSkipTaskbar(false);
@@ -668,6 +839,8 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.detachBoundsListener();
 		this.removeDockToggles();
 		this.captureWindow = null;
+		this.contentLeaf = null;
+		this.clearFocusReleaseTimer();
 		this.popoutBW = null;
 		this.popoutHidden = false;
 		this.clearPendingOpen();
@@ -743,38 +916,8 @@ export default class FloatingNotesPlugin extends Plugin {
 		return file;
 	}
 
-	async toggleCapture() {
-		// A trigger can arrive while Obsidian is still starting up (the local
-		// server is listening before the workspace exists). Run it once ready.
-		if (!this.app.workspace.layoutReady) {
-			this.queuedToggle = true;
-			return;
-		}
-
-		if (this.captureWindow) {
-			if (!this.popoutBW) return;
-			if (this.popoutBW.isDestroyed()) {
-				this.resetState();
-				return;
-			}
-			if (!this.popoutHidden) {
-				this.hidePopout();
-			} else {
-				this.showPopout();
-			}
-			return;
-		}
-
-		if (this.pendingOpen) return;
-		this.pendingOpen = true;
-		// Safety net: if "window-open" never arrives, do not block future toggles.
-		this.pendingOpenTimer = window.setTimeout(() => {
-			this.pendingOpenTimer = null;
-			this.pendingOpen = false;
-		}, 5000);
-
-		const leaf = this.app.workspace.getLeaf("window");
-
+	/** Loads whatever the capture mode says into the given leaf. */
+	private async applyCapture(leaf: WorkspaceLeaf) {
 		if (this.settings.mode === "active") {
 			const activeFile = this.app.workspace.getActiveFile();
 			if (activeFile) {
@@ -794,6 +937,15 @@ export default class FloatingNotesPlugin extends Plugin {
 		} else if (this.settings.mode === "daily") {
 			const file = await this.resolveDailyNote();
 			if (file) await leaf.openFile(file);
+		} else if (this.settings.mode === "view") {
+			const type = this.settings.captureView;
+			if (type && this.isViewRegistered(type)) {
+				await leaf.setViewState({ type, active: true });
+			} else {
+				new Notice(`Floating Notes: view "${type || "(none)"}" is not available. Is its plugin enabled?`);
+				const file = await this.resolveDailyNote();
+				if (file) await leaf.openFile(file);
+			}
 		} else if (this.settings.mode === "new") {
 			const folder = normalizePath(this.settings.newNoteFolder);
 			if (!this.app.vault.getAbstractFileByPath(folder)) {
@@ -803,6 +955,49 @@ export default class FloatingNotesPlugin extends Plugin {
 			const file = await this.app.vault.create(normalizePath(`${folder}/${title}.md`), "");
 			await leaf.openFile(file);
 		}
+	}
+
+	async toggleCapture() {
+		// A trigger can arrive while Obsidian is still starting up (the local
+		// server is listening before the workspace exists). Run it once ready.
+		if (!this.app.workspace.layoutReady) {
+			this.queuedToggle = true;
+			return;
+		}
+
+		if (this.captureWindow) {
+			if (!this.popoutBW) return;
+			if (this.popoutBW.isDestroyed()) {
+				this.resetState();
+				return;
+			}
+			if (!this.popoutHidden) {
+				this.hidePopout();
+			} else {
+				if (this.settings.reapplyOnShow) {
+					const leaf = this.hostLeaf();
+					if (leaf) await this.applyCapture(leaf);
+					this.markContentViewAsNavigation();
+				}
+				this.showPopout();
+			}
+			return;
+		}
+
+		if (this.pendingOpen) return;
+		this.pendingOpen = true;
+		// Safety net: if "window-open" never arrives, do not block future toggles.
+		this.pendingOpenTimer = window.setTimeout(() => {
+			this.pendingOpenTimer = null;
+			this.pendingOpen = false;
+		}, 5000);
+
+		this.previousApp = await frontmostAppBundleId();
+		const leaf = this.app.workspace.getLeaf("window");
+		this.contentLeaf = leaf;
+
+		await this.applyCapture(leaf);
+		this.markContentViewAsNavigation();
 
 		await this.applySidePanelSetting();
 	}
@@ -818,9 +1013,7 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 
 	/** Every registered view, minus the ones that hold a file. */
 	private panelViewOptions(): Record<string, string> {
-		const registry = (this.app as unknown as { viewRegistry?: { viewByType?: Record<string, unknown> } })
-			.viewRegistry?.viewByType;
-		const types = Object.keys(registry ?? {}).filter((t) => !NON_PANEL_VIEWS.has(t));
+		const types = this.plugin.registeredViewTypes();
 		for (const fallback of [LEFT_PANEL_VIEW, RIGHT_PANEL_VIEW]) {
 			if (!types.includes(fallback)) types.push(fallback);
 		}
@@ -875,6 +1068,7 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 					.addOption("fixed", "Fixed note")
 					.addOption("new", "Create new note every time")
 					.addOption("daily", "Today's daily note")
+					.addOption("view", "Plugin view")
 					.setValue(this.plugin.settings.mode)
 					.onChange(async (value) => {
 						this.plugin.settings.mode = value as CaptureMode;
@@ -898,6 +1092,27 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 				);
 		}
 
+		if (this.plugin.settings.mode === "view") {
+			const options = this.panelViewOptions();
+			const current = this.plugin.settings.captureView;
+			if (current && !(current in options)) {
+				options[current] = `${current} (not available)`;
+			}
+			new Setting(containerEl)
+				.setName("Capture view")
+				.setDesc("View to open in the popout, e.g. a plugin such as Journal View or Calendar")
+				.addDropdown((dropdown) =>
+					dropdown
+						.addOption("", "Select a view")
+						.addOptions(options)
+						.setValue(current)
+						.onChange(async (value) => {
+							this.plugin.settings.captureView = value;
+							await this.plugin.saveSettings();
+						})
+				);
+		}
+
 		if (this.plugin.settings.mode === "new") {
 			new Setting(containerEl)
 				.setName("New note folder")
@@ -912,6 +1127,20 @@ class FloatingNotesSettingTab extends PluginSettingTab {
 						})
 				);
 		}
+
+		new Setting(containerEl)
+			.setName("Reapply capture on show")
+			.setDesc(
+				"Each time the popout is shown, reload the capture target (note or view) instead of keeping whatever was open last."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.reapplyOnShow)
+					.onChange(async (value) => {
+						this.plugin.settings.reapplyOnShow = value;
+						await this.plugin.saveSettings();
+					})
+			);
 
 		new Setting(containerEl)
 			.setName("Always on top")

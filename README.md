@@ -24,10 +24,12 @@ The result: press one hotkey from anywhere, get a distraction-free Obsidian edit
 - **Side panels** — two collapsible panels inside the popout, each running any installed view (file explorer, backlinks, a plugin's own sidebar view)
 - **Keep the main window awake** — render plugin content (Tasks, Dataview) in the popout while the main window is minimized (optional)
 - **Auto-launch** — the bundled script starts Obsidian if it isn't running, then toggles
-- **Three capture modes**
+- **Five capture modes**
   - **Current active note** — opens whatever note you're viewing
   - **Fixed note** — always opens a specific note (e.g. `Inbox.md`)
   - **New note every time** — creates a fresh timestamped note in a folder
+  - **Today's daily note** — opens (or creates) today's daily note
+  - **Plugin view** — opens any registered view, e.g. Journal View or Calendar
 - **Multiple triggers** — Obsidian command, `obsidian://floating-notes` URI, or local HTTP endpoint
 
 ## Installation
@@ -294,6 +296,8 @@ Changed the port in settings? Export it for the script: `FLOATING_NOTES_PORT=512
 | Capture mode | What to show in the popout window | Current active note |
 | Fixed note path | Path to the note (when mode is "Fixed note") | `Inbox.md` |
 | New note folder | Folder for new notes (when mode is "New note every time") | `Inbox` |
+| Capture view | Which view to open (when mode is "Plugin view"), from any installed view | none |
+| Reapply capture on show | Reload the capture target every time the popout is shown, instead of keeping what was open last | Off |
 | Always on top | Float popout above other windows | On |
 | Hide tab bar | Hide the popout's tab bar (a 12px strip stays draggable) | Off |
 | Show side panels | Collapsible panels on either side of the note in the popout | Off |
