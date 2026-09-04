@@ -158,15 +158,29 @@ Reload config from the Hammerspoon menu bar icon.
 
 **Karabiner-Elements** (free, low-level)
 
-Complex modification JSON — import into your config:
+Save as `~/.config/karabiner/assets/complex_modifications/floating-notes.json`, then enable it under Complex Modifications → Add predefined rule. The shell command is self-contained: it toggles the popout if Obsidian is running, otherwise launches Obsidian and retries for up to 30 seconds.
 ```json
 {
-  "from": { "key_code": "n", "modifiers": { "mandatory": ["right_option"] } },
-  "to": [{ "shell_command": "/usr/bin/curl -s http://127.0.0.1:51234/toggle" }],
-  "//": "point shell_command at ~/raycast-scripts/floating-notes.sh to auto-launch Obsidian",
-  "type": "basic"
+  "title": "Floating Notes",
+  "rules": [
+    {
+      "description": "Toggle Obsidian floating notes",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": { "key_code": "n", "modifiers": { "mandatory": ["right_option"] } },
+          "to": [
+            {
+              "shell_command": "PORT=\"${FLOATING_NOTES_PORT:-51234}\"; URL=\"http://127.0.0.1:${PORT}/toggle\"; toggle() { curl -fsS --max-time 2 \"$URL\" > /dev/null 2>&1; }; toggle && exit 0; open -a Obsidian > /dev/null 2>&1 || open 'obsidian://' > /dev/null 2>&1; deadline=$((SECONDS + 30)); while [ \"$SECONDS\" -lt \"$deadline\" ]; do sleep 0.5; toggle && exit 0; done; exit 1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
+Karabiner rejects unknown keys such as `"//"`, so keep notes in the `description` field.
 
 **Raycast (Windows)**
 
