@@ -383,10 +383,15 @@ export default class FloatingNotesPlugin extends Plugin {
 		return type || (side === "left" ? LEFT_PANEL_VIEW : RIGHT_PANEL_VIEW);
 	}
 
+	/** True when the leaf sits in the same tab group as the content leaf. */
+	private sharesTabGroup(leaf: WorkspaceLeaf, host: WorkspaceLeaf | null): boolean {
+		return !!host && !!leaf.parent && leaf.parent === host.parent;
+	}
+
 	private panelLeaf(side: DockSide): WorkspaceLeaf | null {
 		const host = this.hostLeaf();
 		const matches = this.popoutLeaves().filter(
-			(l) => l !== host && l.view.getViewType() === this.panelView(side)
+			(l) => l !== host && !this.sharesTabGroup(l, host) && l.view.getViewType() === this.panelView(side)
 		);
 		if (matches.length === 0) return null;
 		if (this.panelView("left") !== this.panelView("right")) return matches[0];
@@ -472,11 +477,13 @@ export default class FloatingNotesPlugin extends Plugin {
 		if (!doc) return;
 		doc.body.classList.toggle(DOCKS_CLASS, this.settings.showSidePanel);
 
-		// Drop panels left behind by a changed view setting.
+		// Drop panels left behind by a changed view setting. Panels live in
+		// their own split next to the content tab group; tabs the user opened
+		// share the content leaf's tab group and must be left alone.
 		const host = this.hostLeaf();
 		const wantedViews = [this.panelView("left"), this.panelView("right")];
 		for (const leaf of this.popoutLeaves()) {
-			if (leaf === host) continue;
+			if (leaf === host || this.sharesTabGroup(leaf, host)) continue;
 			if (!this.settings.showSidePanel || !wantedViews.includes(leaf.view.getViewType())) leaf.detach();
 		}
 
