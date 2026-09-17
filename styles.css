@@ -77,7 +77,11 @@ body.floating-notes-no-tabs .view-header .view-header-title-container {
 	color: var(--text-faint);
 }
 
-/* Without a tab bar the header is the top row: clear the traffic lights. */
+/* Without a tab bar the header is the top row: clear the window controls. */
 body.floating-notes-no-tabs .view-header.floating-notes-first-header {
-	padding-left: 78px;
+	padding-left: var(--frame-left-space, 0px);
+}
+
+body.floating-notes-no-tabs.is-hidden-frameless:not(.is-fullscreen) .view-header.floating-notes-last-header {
+	padding-right: calc(var(--size-4-2) + var(--frame-right-space, 0px));
 }
