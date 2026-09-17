@@ -79,6 +79,7 @@ const DOCKS_CLASS = "floating-notes-docks";
 const TOGGLE_CLASS = "floating-notes-dock-toggle";
 const FIRST_HEADER_CLASS = "floating-notes-first-header";
 const FIRST_BAR_CLASS = "floating-notes-first-bar";
+const LAST_HEADER_CLASS = "floating-notes-last-header";
 // Views that own a file (or nothing) make no sense as a panel, and picking one
 // would confuse the note leaf for a panel.
 const NON_PANEL_VIEWS = new Set([
@@ -583,17 +584,24 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	/**
-	 * With the tab bar hidden the view header becomes the top row, so only the
-	 * leftmost column has to clear the macOS traffic lights.
+	 * With the tab bar hidden the view header becomes the top row, so the
+	 * leftmost column has to clear the macOS traffic lights and the rightmost
+	 * one the Windows/Linux window controls.
 	 */
 	private markFirstHeader() {
 		const doc = this.captureWindow?.win.document;
 		if (!doc) return;
-		doc.querySelectorAll(`.${FIRST_HEADER_CLASS}`).forEach((el) => el.classList.remove(FIRST_HEADER_CLASS));
+		for (const cls of [FIRST_HEADER_CLASS, LAST_HEADER_CLASS]) {
+			doc.querySelectorAll(`.${cls}`).forEach((el) => el.classList.remove(cls));
+		}
 		// With panels on, the drag strip sits above the headers instead.
 		if (this.settings.showSidePanel) return;
-		const leaf = this.panelLeaf("left") ?? this.hostLeaf();
-		leaf?.view.containerEl.querySelector(".view-header")?.classList.add(FIRST_HEADER_CLASS);
+		const header = (side: DockSide) => {
+			const leaf = (this.isOpen(side) ? this.panelLeaf(side) : null) ?? this.hostLeaf();
+			return leaf?.view.containerEl.querySelector(".view-header");
+		};
+		header("left")?.classList.add(FIRST_HEADER_CLASS);
+		header("right")?.classList.add(LAST_HEADER_CLASS);
 	}
 
 	private removeDockToggles() {
