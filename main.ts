@@ -446,7 +446,9 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	/** Panels are recreated on expand, so their dragged width has to be stored. */
 	private savePanelWidths() {
-		const root = this.captureWindow?.win.document.querySelector(".workspace-split.mod-root") as HTMLElement | null;
+		const doc = this.captureWindow?.win?.document;
+		if (!doc) return;
+		const root = doc.querySelector<HTMLElement>(".workspace-split.mod-root");
 		if (!root || !root.offsetWidth) return;
 		let changed = false;
 		for (const side of ["left", "right"] as DockSide[]) {
@@ -850,11 +852,19 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.pendingOpen = false;
 	}
 
-	/** True once the popout's window has been closed, even if its handle lingers. */
-	private isPopoutClosed(): boolean {
-		if (!this.captureWindow || !this.popoutBW) return true;
-		if (this.popoutBW.isDestroyed()) return true;
-		return this.captureWindow.win.closed;
+	/**
+	 * False once the popout window is closed. Closing drops the Electron
+	 * remote context, so calls on the old BrowserWindow handle throw. Check
+	 * the DOM window first and treat any throw as closed.
+	 */
+	private isPopoutAlive(): boolean {
+		const win = this.captureWindow?.win;
+		if (!win || win.closed || !this.popoutBW) return false;
+		try {
+			return !this.popoutBW.isDestroyed();
+		} catch {
+			return false;
+		}
 	}
 
 	private resetState() {
@@ -891,7 +901,7 @@ export default class FloatingNotesPlugin extends Plugin {
 		if (this.boundsSaveTimer !== null) {
 			window.clearTimeout(this.boundsSaveTimer);
 			this.boundsSaveTimer = null;
-			if (this.popoutBW && !this.popoutBW.isDestroyed() && !this.popoutHidden) {
+			if (this.popoutBW && this.isPopoutAlive() && !this.popoutHidden) {
 				try {
 					const b = this.popoutBW.getBounds();
 					this.settings.bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
@@ -901,7 +911,7 @@ export default class FloatingNotesPlugin extends Plugin {
 				}
 			}
 		}
-		if (this.popoutBW && this.boundsListener && !this.popoutBW.isDestroyed()) {
+		if (this.popoutBW && this.boundsListener && this.isPopoutAlive()) {
 			try {
 				this.popoutBW.off("resize", this.boundsListener);
 				this.popoutBW.off("moved", this.boundsListener);
@@ -987,7 +997,7 @@ export default class FloatingNotesPlugin extends Plugin {
 			return;
 		}
 
-		if (this.captureWindow && this.isPopoutClosed()) {
+		if (this.captureWindow && !this.isPopoutAlive()) {
 			// Closed with the window's close button. Forget it and open a fresh
 			// popout below, instead of acting on the dead one.
 			this.resetState();
