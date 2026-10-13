@@ -352,7 +352,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	applyTabBarSetting() {
-		const body = this.captureWindow?.win.document.body;
+		const body = this.captureWindow?.win?.document.body;
 		if (!body) return;
 		body.classList.toggle(HIDE_TAB_BAR_CLASS, this.settings.hideTabBar);
 		this.renderDockToggles();
@@ -476,7 +476,7 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	/** Reconciles both docks and the toggle buttons with the current settings. */
 	async applySidePanelSetting() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		doc.body.classList.toggle(DOCKS_CLASS, this.settings.showSidePanel);
 
@@ -553,7 +553,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	 * same in both states.
 	 */
 	private renderDockToggles() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		this.removeDockToggles();
 		this.markFirstHeader();
@@ -591,7 +591,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	 * one the Windows/Linux window controls.
 	 */
 	private markFirstHeader() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		for (const cls of [FIRST_HEADER_CLASS, LAST_HEADER_CLASS]) {
 			doc.querySelectorAll(`.${cls}`).forEach((el) => el.classList.remove(cls));
@@ -607,7 +607,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	private removeDockToggles() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		doc.querySelectorAll(`.${TOGGLE_CLASS}`).forEach((el) => el.remove());
 		doc.querySelectorAll(`.${FIRST_BAR_CLASS}`).forEach((el) => el.classList.remove(FIRST_BAR_CLASS));
