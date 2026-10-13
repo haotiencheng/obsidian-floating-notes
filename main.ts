@@ -352,7 +352,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	applyTabBarSetting() {
-		const body = this.captureWindow?.win.document.body;
+		const body = this.captureWindow?.win?.document.body;
 		if (!body) return;
 		body.classList.toggle(HIDE_TAB_BAR_CLASS, this.settings.hideTabBar);
 		this.renderDockToggles();
@@ -446,7 +446,9 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	/** Panels are recreated on expand, so their dragged width has to be stored. */
 	private savePanelWidths() {
-		const root = this.captureWindow?.win.document.querySelector(".workspace-split.mod-root") as HTMLElement | null;
+		const doc = this.captureWindow?.win?.document;
+		if (!doc) return;
+		const root = doc.querySelector<HTMLElement>(".workspace-split.mod-root");
 		if (!root || !root.offsetWidth) return;
 		let changed = false;
 		for (const side of ["left", "right"] as DockSide[]) {
@@ -474,7 +476,7 @@ export default class FloatingNotesPlugin extends Plugin {
 
 	/** Reconciles both docks and the toggle buttons with the current settings. */
 	async applySidePanelSetting() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		doc.body.classList.toggle(DOCKS_CLASS, this.settings.showSidePanel);
 
@@ -551,7 +553,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	 * same in both states.
 	 */
 	private renderDockToggles() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		this.removeDockToggles();
 		this.markFirstHeader();
@@ -589,7 +591,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	 * one the Windows/Linux window controls.
 	 */
 	private markFirstHeader() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		for (const cls of [FIRST_HEADER_CLASS, LAST_HEADER_CLASS]) {
 			doc.querySelectorAll(`.${cls}`).forEach((el) => el.classList.remove(cls));
@@ -605,7 +607,7 @@ export default class FloatingNotesPlugin extends Plugin {
 	}
 
 	private removeDockToggles() {
-		const doc = this.captureWindow?.win.document;
+		const doc = this.captureWindow?.win?.document;
 		if (!doc) return;
 		doc.querySelectorAll(`.${TOGGLE_CLASS}`).forEach((el) => el.remove());
 		doc.querySelectorAll(`.${FIRST_BAR_CLASS}`).forEach((el) => el.classList.remove(FIRST_BAR_CLASS));
@@ -850,6 +852,21 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.pendingOpen = false;
 	}
 
+	/**
+	 * False once the popout window is closed. Closing drops the Electron
+	 * remote context, so calls on the old BrowserWindow handle throw. Check
+	 * the DOM window first and treat any throw as closed.
+	 */
+	private isPopoutAlive(): boolean {
+		const win = this.captureWindow?.win;
+		if (!win || win.closed || !this.popoutBW) return false;
+		try {
+			return !this.popoutBW.isDestroyed();
+		} catch {
+			return false;
+		}
+	}
+
 	private resetState() {
 		this.detachBoundsListener();
 		this.removeDockToggles();
@@ -884,7 +901,7 @@ export default class FloatingNotesPlugin extends Plugin {
 		if (this.boundsSaveTimer !== null) {
 			window.clearTimeout(this.boundsSaveTimer);
 			this.boundsSaveTimer = null;
-			if (this.popoutBW && !this.popoutBW.isDestroyed() && !this.popoutHidden) {
+			if (this.popoutBW && this.isPopoutAlive() && !this.popoutHidden) {
 				try {
 					const b = this.popoutBW.getBounds();
 					this.settings.bounds = { x: b.x, y: b.y, width: b.width, height: b.height };
@@ -894,7 +911,7 @@ export default class FloatingNotesPlugin extends Plugin {
 				}
 			}
 		}
-		if (this.popoutBW && this.boundsListener && !this.popoutBW.isDestroyed()) {
+		if (this.popoutBW && this.boundsListener && this.isPopoutAlive()) {
 			try {
 				this.popoutBW.off("resize", this.boundsListener);
 				this.popoutBW.off("moved", this.boundsListener);
@@ -980,12 +997,14 @@ export default class FloatingNotesPlugin extends Plugin {
 			return;
 		}
 
+		if (this.captureWindow && !this.isPopoutAlive()) {
+			// Closed with the window's close button. Forget it and open a fresh
+			// popout below, instead of acting on the dead one.
+			this.resetState();
+		}
+
 		if (this.captureWindow) {
 			if (!this.popoutBW) return;
-			if (this.popoutBW.isDestroyed()) {
-				this.resetState();
-				return;
-			}
 			if (!this.popoutHidden) {
 				this.hidePopout();
 			} else {
