@@ -850,6 +850,13 @@ export default class FloatingNotesPlugin extends Plugin {
 		this.pendingOpen = false;
 	}
 
+	/** True once the popout's window has been closed, even if its handle lingers. */
+	private isPopoutClosed(): boolean {
+		if (!this.captureWindow || !this.popoutBW) return true;
+		if (this.popoutBW.isDestroyed()) return true;
+		return this.captureWindow.win.closed;
+	}
+
 	private resetState() {
 		this.detachBoundsListener();
 		this.removeDockToggles();
@@ -980,12 +987,14 @@ export default class FloatingNotesPlugin extends Plugin {
 			return;
 		}
 
+		if (this.captureWindow && this.isPopoutClosed()) {
+			// Closed with the window's close button. Forget it and open a fresh
+			// popout below, instead of acting on the dead one.
+			this.resetState();
+		}
+
 		if (this.captureWindow) {
 			if (!this.popoutBW) return;
-			if (this.popoutBW.isDestroyed()) {
-				this.resetState();
-				return;
-			}
 			if (!this.popoutHidden) {
 				this.hidePopout();
 			} else {
