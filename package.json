@@ -14,7 +14,7 @@
 		"floating-notes",
 		"quick-capture"
 	],
-	"author": "Project Stain",
+	"author": "haotiencheng",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
